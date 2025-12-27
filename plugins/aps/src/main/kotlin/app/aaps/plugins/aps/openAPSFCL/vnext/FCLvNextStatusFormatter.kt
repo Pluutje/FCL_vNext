@@ -67,7 +67,7 @@ Nog geen data
 
         return """
 ════════════════════════
- 🧠 FCL vNext v17.4.0
+ 🧠 FCL vNext v17.5.3
 ════════════════════════
 
 $coreStatus

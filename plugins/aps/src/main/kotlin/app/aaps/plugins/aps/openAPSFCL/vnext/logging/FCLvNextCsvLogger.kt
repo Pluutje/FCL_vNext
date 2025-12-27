@@ -1,4 +1,4 @@
-package app.aaps.plugins.aps.openAPSFCL.vnext
+package app.aaps.plugins.aps.openAPSFCL.vnext.logging
 
 import android.os.Environment
 import org.joda.time.DateTime
@@ -241,11 +241,11 @@ object FCLvNextCsvLogger {
     }
 
     // formatting helpers
-    private fun bg1(x: Double) = String.format(Locale.US, "%.1f", x) // BG-ish
-    private fun bg2(x: Double) = String.format(Locale.US, "%.2f", x) // BG-ish but 2 (ISF)
-    private fun d2(x: Double)  = String.format(Locale.US, "%.2f", x) // delta
-    private fun u2(x: Double)  = String.format(Locale.US, "%.2f", x) // insulin / IOB
-    private fun a2(x: Double)  = String.format(Locale.US, "%.2f", x) // accel
-    private fun e2(x: Double)  = String.format(Locale.US, "%.2f", x) // energy
-    private fun t2(x: Double)  = String.format(Locale.US, "%.2f", x) // trends/misc
+    private fun bg1(x: Double) = String.Companion.format(Locale.US, "%.1f", x) // BG-ish
+    private fun bg2(x: Double) = String.Companion.format(Locale.US, "%.2f", x) // BG-ish but 2 (ISF)
+    private fun d2(x: Double)  = String.Companion.format(Locale.US, "%.2f", x) // delta
+    private fun u2(x: Double)  = String.Companion.format(Locale.US, "%.2f", x) // insulin / IOB
+    private fun a2(x: Double)  = String.Companion.format(Locale.US, "%.2f", x) // accel
+    private fun e2(x: Double)  = String.Companion.format(Locale.US, "%.2f", x) // energy
+    private fun t2(x: Double)  = String.Companion.format(Locale.US, "%.2f", x) // trends/misc
 }

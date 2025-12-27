@@ -6,7 +6,12 @@ import app.aaps.core.keys.DoubleKey
 import app.aaps.core.keys.IntKey
 import app.aaps.core.keys.Preferences
 import app.aaps.core.keys.StringKey
+import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextCoreParameterSnapshot
+import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextCsvLogger
 import kotlin.collections.get
+import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextParameterLogger
+
+import app.aaps.plugins.aps.openAPSFCL.vnext.logging.FCLvNextProfileParameterSnapshot
 
 data class FCLvNextInput(
     val bgNow: Double,                          // mmol/L
@@ -163,6 +168,9 @@ private val peakPrediction = PeakPredictionContext()
 
 private const val MAX_DELIVERY_HISTORY = 5
 
+
+
+
 val deliveryHistory: ArrayDeque<Pair<DateTime, Double>> =
     ArrayDeque()
 
@@ -270,7 +278,11 @@ private fun updatePeakEstimate(
     // ── episode start condities (flexibel, maar bewust niet te streng) ──
     val episodeShouldBeActive =
         mealSignal.state != MealState.NONE ||
-            (ctx.deltaToTarget >= 0.8 && ctx.slope >= 0.6 && ctx.consistency >= 0.45)
+            ( ctx.consistency >= 0.45 &&
+                    ( ctx.deltaToTarget >= 0.6 ||
+                            (ctx.acceleration >= 0.12 && ctx.slope >= 0.15)
+                        )
+                )
 
     // ── episode init/reset ──
     if (!peakEstimator.active && episodeShouldBeActive) {
@@ -294,7 +306,7 @@ private fun updatePeakEstimate(
     if (peakEstimator.active && !episodeShouldBeActive) {
         // exit pas als we echt “uit de meal dynamiek” zijn:
         val fallingClearly = ctx.slope <= -0.6 && ctx.consistency >= 0.55
-        val lowDelta = ctx.deltaToTarget < 0.6
+        val lowDelta = ctx.deltaToTarget < 0.2 && ctx.acceleration <= 0.0
         if (fallingClearly || lowDelta) {
             peakEstimator.active = false
             peakEstimator.state = PeakPredictionState.IDLE
@@ -718,7 +730,7 @@ private fun computeEarlyDoseDecision(
     }
 
     val slopeScore = smooth01((ctx.slope - 0.20) / (1.20 - 0.20))
-    val accelScore = smooth01((ctx.acceleration - 0.05) / (0.25 - 0.05))
+    val accelScore = smooth01((ctx.acceleration - (-0.02)) / (0.15 - (-0.02)))
     val deltaScore = smooth01((ctx.deltaToTarget - 0.0) / 1.6)
     val consistScore = smooth01((ctx.consistency - 0.45) / 0.35)
     val iobRoom = invSmooth01((ctx.iobRatio - 0.20) / 0.50)
@@ -743,8 +755,8 @@ private fun computeEarlyDoseDecision(
 
     conf = conf.coerceIn(0.0, 1.0)
 
-    val stage1Min = 0.42
-    val stage2Min = 0.64
+    val stage1Min = 0.28
+    val stage2Min = 0.55
 
     val minutesSinceLastFire =
         minutesSince(earlyDose.lastFireAt, now)
@@ -760,12 +772,15 @@ private fun computeEarlyDoseDecision(
     }
 
     val (minF, maxF) =
-        if (stageToFire == 1) 0.30 to 0.60 else 0.45 to 0.85
+        if (stageToFire == 1) 0.40 to 0.70 else 0.55 to 0.90
 
     var factor = lerp(minF, maxF, conf)
 
     val iobPenalty = smooth01((ctx.iobRatio - 0.35) / 0.40)
     factor *= (1.0 - 0.35 * iobPenalty)
+// iets meer iob demping als de piek te hoog is
+ /*   val iobPenalty = smooth01((ctx.iobRatio - 0.30) / 0.40)
+    factor *= (1.0 - 0.45 * iobPenalty)  */
 
     if (ctx.input.isNight) factor *= 0.88
 
@@ -852,10 +867,12 @@ private fun isEarlyProtectionActive(
     ctx: FCLvNextContext,
     peak: PeakEstimate
 ): Boolean {
+
     if (earlyStage <= 0) return false
 
-    // Zodra we afremmen of piek bevestigd is: early bescherming vervalt
+    // ❗ ZODRA AFREM MEN BEGINT → early protection UIT
     if (ctx.acceleration < 0.0) return false
+
     if (peak.state == PeakPredictionState.CONFIRMED) return false
 
     return true
@@ -869,6 +886,7 @@ private fun shouldHardBlockTrajectory(
     peak: PeakEstimate
 ): Boolean {
 
+    if (ctx.acceleration <= -0.10 && ctx.iobRatio >= 0.35) return true
     // early bescherming alleen zolang we nog niet afremmen / piek hebben
     if (isEarlyProtectionActive(earlyStage, ctx, peak)) return false
 
@@ -877,8 +895,13 @@ private fun shouldHardBlockTrajectory(
 
     val highIob = ctx.iobRatio >= 0.70
     val notReallyRising = ctx.slope < 0.6
-    val decelerating = ctx.acceleration <= -0.02
+    val decelerating = ctx.acceleration <= -0.05
     val reliable = ctx.consistency >= 0.5
+
+    // ✅ Extra harde regel: duidelijke omkeer + al redelijk IOB -> meteen blokkeren
+    if (ctx.acceleration <= -0.10 && ctx.iobRatio >= 0.35 && ctx.consistency >= 0.45) {
+        return true
+    }
 
     return highIob && notReallyRising && decelerating && reliable
 }
@@ -913,8 +936,6 @@ private fun shouldBlockMicroCorrections(
     return fallingOrFlat && notFarAboveTarget
 }
 
-
-
 /**
  * Re-entry: tweede gang / dessert.
  * Alleen toestaan als:
@@ -942,12 +963,25 @@ private fun isReentrySignal(
 }
 
 
-
-
-
 class FCLvNext(
     private val preferences: Preferences
 ) {
+
+    private val coreParamLogger =
+        FCLvNextParameterLogger(
+            fileName = "FCLvNext_CoreParameters.csv"
+        ) {
+            FCLvNextCoreParameterSnapshot.collect(preferences)
+        }
+
+    private val profileParamLogger =
+        FCLvNextParameterLogger(
+            fileName = "FCLvNext_ProfileParameters.csv"
+        ) {
+            FCLvNextProfileParameterSnapshot.collect(preferences)
+        }
+
+
     private fun buildContext(input: FCLvNextInput): FCLvNextContext {
         val filteredHistory = FCLvNextBgFilter.ewma(
             data = input.bgHistory,
@@ -996,6 +1030,25 @@ class FCLvNext(
         // ─────────────────────────────────────────────
 
         var energy = calculateEnergy(ctx, config)
+
+        // ─────────────────────────────────────────────
+       // 🔒 ENERGY EXHAUSTION GATE (post-rise hard stop)
+       // ─────────────────────────────────────────────
+        val energyExhausted =
+            ctx.deltaToTarget >= 4.5 &&            // duidelijk boven target
+                ctx.acceleration <= 0.05 &&             // versnelling vrijwel weg
+                ctx.slope >= 0.8 &&                     // slope hoog door historie
+                ctx.iobRatio >= 0.55 &&                 // al voldoende insulin aan boord
+                ctx.consistency >= config.minConsistency
+
+        if (energyExhausted) {
+            status.append(
+                "ENERGY EXHAUSTED: slope=${"%.2f".format(ctx.slope)} " +
+                    "accel=${"%.2f".format(ctx.acceleration)} " +
+                    "iob=${"%.2f".format(ctx.iobRatio)} → energy=0\n"
+            )
+            energy = 0.0
+        }
 
         val stagnationBoost =
             calculateStagnationBoost(ctx, config)
@@ -1087,69 +1140,13 @@ class FCLvNext(
             power = config.commitIobPower   // NIEUW, milder
         )
 
-    /*    var finalDose = (decidedDose * iobFactor).coerceAtLeast(0.0)
-
-       // ── Micro-correction hold: niet drip-feeden als BG al daalt/vlak is ──
-        if (shouldBlockMicroCorrections(ctx, mealSignal, peakCategory, earlyDose.stage, config)) {
-            status.append(
-                "HoldCorrections: slope=${"%.2f".format(ctx.slope)} accel=${"%.2f".format(ctx.acceleration)} " +
-                    "delta=${"%.2f".format(ctx.deltaToTarget)} → finalDose=0\n"
-            )
-            finalDose = 0.0
-        }
-
-        status.append(
-            "IOB boost=${"%.2f".format(peakIobBoost)} " +
-                "effectiveRatio=${"%.2f".format(boostedIobRatio)}\n"
-        )
-        status.append(
-            "IOB=${"%.2f".format(input.currentIOB)}U " +
-                "(ratio=${"%.2f".format(ctx.iobRatio)}) " +
-                "factor=${"%.2f".format(iobFactor)} " +
-                "→ ${"%.2f".format(finalDose)}U\n"
-        )
-
-
-        // ── Trajectory damping: continu remmen o.b.v. BG / IOB / slope / accel ──
-        if (shouldHardBlockTrajectory(ctx, mealSignal)) {
-            status.append("Trajectory HARD BLOCK → finalDose=0\n")
-            finalDose = 0.0
-        } else {
-            val trajFactor = trajectoryDampingFactor(ctx, mealSignal, config)
-            val before = finalDose
-            finalDose *= trajFactor
-            status.append(
-                "TrajectoryFactor=${"%.2f".format(trajFactor)} " +
-                    "${"%.2f".format(before)}→${"%.2f".format(finalDose)}U\n"
-            )
-        }
-        // ─────────────────────────────────────────────
-       // 🚀 EARLY DOSE CONTROLLER (single consolidated)
-       // ─────────────────────────────────────────────
-        val early = computeEarlyDoseDecision(
-            ctx = ctx,
-            mealSignal = mealSignal,
-            peak = peak,
-            now = now,
-            config = config
-        )
-
-        status.append(early.reason + "\n")
-
-        if (early.active && early.targetU > 0.0) {
-            val before = finalDose
-            finalDose = maxOf(finalDose, early.targetU)
-
-            earlyDose.stage = maxOf(earlyDose.stage, early.stageToFire)
-            earlyDose.lastFireAt = now
-            earlyDose.lastConfidence = early.confidence
-
-            status.append(
-                "EARLY FLOOR: ${"%.2f".format(before)}→${"%.2f".format(finalDose)}U\n"
-            )
-        }    */
 
         var finalDose = (decidedDose * iobFactor).coerceAtLeast(0.0)
+
+        if (ctx.acceleration > 0.2 && ctx.iobRatio >= 0.75) {
+            status.append("RISING IOB CAP → finalDose limited\n")
+            finalDose = minOf(finalDose, 0.6 * config.maxSMB)
+        }
 
 // ─────────────────────────────────────────────
 // 🚀 EARLY DOSE CONTROLLER (move earlier in pipeline)
@@ -1204,8 +1201,9 @@ class FCLvNext(
             )
         }
 
-// Apply early floor AFTER dampers (maar vóór cap/commit), zodat het echt effect heeft
-        if (early.active && early.targetU > 0.0) {
+// Apply early floor AFTER dampers (maar vóór cap/commit)
+// ✅ NIET toepassen als we al aan het afremmen zijn (accel < 0)
+        if (early.active && early.targetU > 0.0 && ctx.acceleration >= 0.0) {
             val before = finalDose
             finalDose = maxOf(finalDose, early.targetU)
 
@@ -1217,10 +1215,9 @@ class FCLvNext(
             status.append(
                 "EARLY FLOOR: ${"%.2f".format(before)}→${"%.2f".format(finalDose)}U\n"
             )
+        } else if (early.active && early.targetU > 0.0 && ctx.acceleration < 0.0) {
+            status.append("EARLY FLOOR skipped (accel<0)\n")
         }
-
-
-
 
 
         // ─────────────────────────────────────────────
@@ -1241,12 +1238,6 @@ class FCLvNext(
 
 
 
-
-
-
-
-
-
 // ─────────────────────────────────────────────
 // 9️⃣ Meal detectie & commit/observe + peak suppression + re-entry
 // ─────────────────────────────────────────────
@@ -1259,7 +1250,11 @@ class FCLvNext(
         var commandedDose = finalDose
 
         // ── Anti-drip: kleine correcties niet elke cyclus ──
-        if (commandedDose > 0.0 && commandedDose <= config.smallCorrectionMaxU && mealSignal.state == MealState.NONE) {
+        if (commandedDose > 0.0 &&
+            commandedDose <= config.smallCorrectionMaxU &&
+            mealSignal.state == MealState.NONE &&
+            earlyDose.stage == 0   // ⬅️ EARLY DOSE UITZONDEREN
+        ) {
             val minutesSinceSmall = minutesSince(lastSmallCorrectionAt, now)
             if (minutesSinceSmall < config.smallCorrectionCooldownMinutes) {
                 status.append("SmallCorrectionCooldown: ${minutesSinceSmall}m < ${config.smallCorrectionCooldownMinutes}m → dose=0\n")
@@ -1268,6 +1263,7 @@ class FCLvNext(
                 lastSmallCorrectionAt = now
             }
         }
+
 
 // 9a) Peak/absorption suppression: stop of reduce rond/na piek
         val suppressForPeak =
@@ -1292,10 +1288,21 @@ class FCLvNext(
 
             status.append("SEGMENT: re-entry → new impulse window\n")
         }
-
+// 🔒 POST-PEAK COMMIT BLOCK: nooit committen na curve-omkeer
+        val postPeakCommitBlocked =
+                ctx.acceleration < -0.05 &&
+                ctx.iobRatio >= 0.30 &&
+                !reentry &&                      // re-entry mag dit overrulen
+                ctx.consistency >= config.minConsistency
 
 // 9c) Commit logic (alleen als we niet in peak-suppress zitten, OF als re-entry waar is)
-        val allowCommitPath = (!suppressForPeak) || reentry
+        val allowCommitPath =
+            ((!suppressForPeak) || reentry) &&
+                !postPeakCommitBlocked
+
+        if (postPeakCommitBlocked) {
+            status.append("POST-PEAK: accel<0 → commit blocked\n")
+        }
 
         if (allowCommitPath && mealSignal.state != MealState.NONE) {
 
@@ -1474,6 +1481,12 @@ class FCLvNext(
         )
 
         // ─────────────────────────────────────────────
+       // Parameter snapshot logging (laagfrequent)
+       // ─────────────────────────────────────────────
+        coreParamLogger.maybeLog()
+        profileParamLogger.maybeLog()
+
+        // ─────────────────────────────────────────────
         // RETURN
         // ─────────────────────────────────────────────
         return FCLvNextAdvice(
@@ -1485,8 +1498,6 @@ class FCLvNext(
             statusText = status.toString()
         )
     }
-
-
 
 
 }

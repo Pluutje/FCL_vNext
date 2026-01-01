@@ -312,9 +312,12 @@ class FCLMetrics(
             val m24 = cache.metrics24h
             val m7 = cache.metrics7d
 
+      //      📊 GLUCOSE STATISTIEKEN
+      //      ─────────────────────
+
+
             return """
-📊 GLUCOSE STATISTIEKEN
-─────────────────────
+
 [ TIR (3.9–10.0 mmol/L) ]
    • 24u: ${m24.timeInRange.toInt()}% 
    • 7d : ${m7.timeInRange.toInt()}%

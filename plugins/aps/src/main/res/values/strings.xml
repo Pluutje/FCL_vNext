@@ -494,13 +494,26 @@
     <!-- ===============================
          Profielen & context
          =============================== -->
+    <string name="fcl_vnext_profile_title">📊 FCL Profiel</string>
+    <string name="fcl_vnext_profile_summary">Kies uit een van de 3 basis profielen: STRICT, BALANCED of AGGRESSIVE .</string>
+
+    <!-- FCLvNext profile selection -->
+    <string-array name="fcl_vnext_profile_entries">
+        <item>Strict (maximale veiligheid)</item>
+        <item>Balanced (aanbevolen)</item>
+        <item>Aggressive (sneller ingrijpen)</item>
+    </string-array>
+
+    <string-array name="fcl_vnext_profile_values">
+        <item>STRICT</item>
+        <item>BALANCED</item>
+        <item>AGGRESSIVE</item>
+    </string-array>
+
 
     <string name="fcl_vnext_profiles_intro">Deze instellingen beschrijven jouw persoonlijke context.\nZe worden meestal éénmalig ingesteld en bepalen hoe FCL vNext zich aanpast aan dag/nacht, insulineresistentie en lichamelijke activiteit.</string>
-
     <string name="fcl_vnext_profiles_docs_title">📄 Uitleg Profielen en context.</string>
-
     <string name="fcl_vnext_profiles_docs_summary">Documentatie over dag/nacht-cyclus, resistentie en activiteit en hoe deze het algoritme beïnvloeden.</string>
-
     <string name="fcl_vnext_profiles_docs_url">https://docs.google.com/document/d/PLACEHOLDER_FCL_VNEXT_PROFILES</string>
 
     <!-- ===============================
@@ -508,11 +521,8 @@
          =============================== -->
 
     <string name="fcl_vnext_safety_intro">Deze instellingen beschermen tegen overdosering en zorgen dat FCL vNext automatisch afremt bij onzekerheid, hoge IOB of onbetrouwbare data.\nVoor de meeste gebruikers zijn de standaardwaarden veilig en voldoende.</string>
-
     <string name="fcl_vnext_safety_docs_title">📄 Uitleg Veiligheid en grenzen.</string>
-
     <string name="fcl_vnext_safety_docs_summary">Toelichting op alle veiligheidsmechanismen, IOB-remming en betrouwbaarheidscontroles.</string>
-
     <string name="fcl_vnext_safety_docs_url">https://docs.google.com/document/d/PLACEHOLDER_FCL_VNEXT_SAFETY</string>
 
     <!-- ===============================
@@ -520,13 +530,9 @@
         =============================== -->
 
     <string name="fcl_vnext_advanced_intro">Deze instellingen zijn bedoeld voor analyse, tuning en experimenteel gebruik.\nWijzig deze alleen als je CSV-logs analyseert of weet wat je doet.</string>
-
     <string name="fcl_vnext_advanced_docs_title">📄 Uitleg Analyse en geavanceerd</string>
     <string name="fcl_vnext_advanced_docs_summary">Achtergrondinformatie over filtering, absorptie/nasleep en expertinstellingen.</string>
-
     <string name="fcl_vnext_advanced_docs_url">https://docs.google.com/document/d/PLACEHOLDER_FCL_VNEXT_ADVANCED</string>
-
-
     <string name="fcl_vnext_toc_hint">Kies hieronder een hoofdstuk. Bovenaan elk hoofdstuk staat uitleg en een document-link, daaronder de instellingen.</string>
 
     <!-- NEW param: commit IOB power -->

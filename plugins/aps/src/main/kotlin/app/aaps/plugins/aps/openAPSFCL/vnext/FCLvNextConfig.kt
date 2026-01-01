@@ -117,7 +117,9 @@ data class FCLvNextConfig(
     val peakRiseGain: Double,              // bv 0.65
     val peakUseMaxSlopeFrac: Double,       // bv 0.6
     val peakUseMaxAccelFrac: Double,       // bv 0.5
-    val peakPredictionMaxMmol: Double       // bv 25.0
+    val peakPredictionMaxMmol: Double,       // bv 25.0
+
+    val trendConfirmCycles: Int
 )
 
 
@@ -232,6 +234,8 @@ fun loadFCLvNextConfig(
         peakUseMaxSlopeFrac = 0.6,
         peakUseMaxAccelFrac = 0.5,
         peakPredictionMaxMmol = 25.0,
+
+        trendConfirmCycles = 2   // start veilig: ~10 minuten
     )
 
 }

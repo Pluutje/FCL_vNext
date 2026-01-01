@@ -67,7 +67,9 @@ import app.aaps.core.utils.MidnightUtils
 import app.aaps.core.validators.preferences.AdaptiveDoublePreference
 import app.aaps.core.validators.preferences.AdaptiveIntPreference
 import app.aaps.core.validators.preferences.AdaptiveIntentPreference
+import app.aaps.core.validators.preferences.AdaptiveListPreference
 import app.aaps.core.validators.preferences.AdaptiveStringPreference
+
 import app.aaps.core.validators.preferences.AdaptiveSwitchPreference
 import app.aaps.core.validators.preferences.AdaptiveUnitPreference
 import app.aaps.plugins.aps.OpenAPSFragment
@@ -422,20 +424,20 @@ open class OpenAPSFCLPlugin @Inject constructor(
             min_5m_carbimpact = 0.0, // not used
             max_iob = constraintsChecker.getMaxIOBAllowed().also { inputConstraints.copyReasons(it) }.value(),
             max_daily_basal = profile.getMaxDailyBasal(),
-            max_basal = constraintsChecker.getMaxBasalAllowed(profile).also { inputConstraints.copyReasons(it) }.value(),
+            max_basal = 25.0, //constraintsChecker.getMaxBasalAllowed(profile).also { inputConstraints.copyReasons(it) }.value(),
             min_bg = minBg,
             max_bg = maxBg,
             target_bg = targetBg,
             carb_ratio = profile.getIc(),
             sens = profile.getIsfMgdl("OpenAPSSMBPlugin"),
             autosens_adjust_targets = false, // not used
-            max_daily_safety_multiplier = preferences.get(DoubleKey.ApsMaxDailyMultiplier),
-            current_basal_safety_multiplier = preferences.get(DoubleKey.ApsMaxCurrentBasalMultiplier),
+            max_daily_safety_multiplier = 500.0, //preferences.get(DoubleKey.ApsMaxDailyMultiplier),
+            current_basal_safety_multiplier = 500.0, // preferences.get(DoubleKey.ApsMaxCurrentBasalMultiplier),
             lgsThreshold = profileUtil.convertToMgdlDetect(preferences.get(UnitDoubleKey.ApsLgsThreshold)).toInt(),
             high_temptarget_raises_sensitivity = false,
             low_temptarget_lowers_sensitivity = false,
-            sensitivity_raises_target = preferences.get(BooleanKey.ApsSensitivityRaisesTarget),
-            resistance_lowers_target = preferences.get(BooleanKey.ApsResistanceLowersTarget),
+            sensitivity_raises_target = false, //preferences.get(BooleanKey.ApsSensitivityRaisesTarget),
+            resistance_lowers_target = false, //preferences.get(BooleanKey.ApsResistanceLowersTarget),
             adv_target_adjustments = SMBDefaults.adv_target_adjustments,
             exercise_mode = SMBDefaults.exercise_mode,
             half_basal_exercise_target = SMBDefaults.half_basal_exercise_target,
@@ -444,14 +446,14 @@ open class OpenAPSFCLPlugin @Inject constructor(
             remainingCarbsCap = SMBDefaults.remainingCarbsCap,
             enableUAM = constraintsChecker.isUAMEnabled().also { inputConstraints.copyReasons(it) }.value(),
             A52_risk_enable = SMBDefaults.A52_risk_enable,
-            SMBInterval = preferences.get(IntKey.ApsMaxSmbFrequency),
+            SMBInterval = 3, //preferences.get(IntKey.ApsMaxSmbFrequency),
             enableSMB_with_COB = true, // smbEnabled && preferences.get(BooleanKey.ApsUseSmbWithCob),
-            enableSMB_with_temptarget = smbEnabled && preferences.get(BooleanKey.ApsUseSmbWithLowTt),
-            allowSMB_with_high_temptarget = smbEnabled && preferences.get(BooleanKey.ApsUseSmbWithHighTt),
-            enableSMB_always = smbEnabled && preferences.get(BooleanKey.ApsUseSmbAlways) && advancedFiltering,
+            enableSMB_with_temptarget = true, //smbEnabled && preferences.get(BooleanKey.ApsUseSmbWithLowTt),
+            allowSMB_with_high_temptarget = false, //smbEnabled && preferences.get(BooleanKey.ApsUseSmbWithHighTt),
+            enableSMB_always = true, //smbEnabled && preferences.get(BooleanKey.ApsUseSmbAlways) && advancedFiltering,
             enableSMB_after_carbs = true, //smbEnabled && preferences.get(BooleanKey.ApsUseSmbAfterCarbs) && advancedFiltering,
-            maxSMBBasalMinutes = preferences.get(IntKey.ApsMaxMinutesOfBasalToLimitSmb),
-            maxUAMSMBBasalMinutes = preferences.get(IntKey.ApsUamMaxMinutesOfBasalToLimitSmb),
+            maxSMBBasalMinutes = 240, //preferences.get(IntKey.ApsMaxMinutesOfBasalToLimitSmb),
+            maxUAMSMBBasalMinutes = 240, //preferences.get(IntKey.ApsUamMaxMinutesOfBasalToLimitSmb),
             bolus_increment = pump.pumpDescription.bolusStep,
             carbsReqThreshold = 20, //preferences.get(IntKey.ApsCarbsRequestThreshold),
             current_basal = activePlugin.activePump.baseBasalRate,
@@ -462,7 +464,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
             insulinDivisor = dynIsfResult.insulinDivisor,
             TDD = dynIsfResult.tdd ?: 0.0
         )
-        val microBolusAllowed = constraintsChecker.isSMBModeEnabled(ConstraintObject(tempBasalFallback.not(), aapsLogger)).also { inputConstraints.copyReasons(it) }.value()
+        val microBolusAllowed = true //constraintsChecker.isSMBModeEnabled(ConstraintObject(tempBasalFallback.not(), aapsLogger)).also { inputConstraints.copyReasons(it) }.value()
         val flatBGsDetected = bgQualityCheck.state == BgQualityCheck.State.FLAT
 
         aapsLogger.debug(LTag.APS, ">>> Invoking determine_basal SMB <<<")
@@ -731,6 +733,25 @@ open class OpenAPSFCLPlugin @Inject constructor(
                     summary = R.string.fcl_vnext_profiles_docs_summary
                 )
             )
+
+            addPreference(
+                AdaptiveListPreference(
+                    ctx = context,
+                    stringKey = StringKey.fcl_vnext_profile,
+                    title = R.string.fcl_vnext_profile_title,
+                    summary = R.string.fcl_vnext_profile_summary,
+                    entries = context.resources
+                        .getStringArray(R.array.fcl_vnext_profile_entries)
+                        .map { it as CharSequence }
+                        .toTypedArray(),
+                    entryValues = context.resources
+                        .getStringArray(R.array.fcl_vnext_profile_values)
+                        .map { it as CharSequence }
+                        .toTypedArray()
+                )
+            )
+
+
 
             // 🌙 DAG-NACHT CYCLUS (1-op-1)
             val DAGNACHTCYCLUS = preferenceManager.createPreferenceScreen(context).apply {

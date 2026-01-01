@@ -22,6 +22,8 @@ object FCLvNextCsvLogger {
         "delta_target",
         "iob",
         "iob_ratio",
+        "bg_zone",
+        "dose_access",
 
         // ── Trends ──
         "slope",
@@ -65,6 +67,11 @@ object FCLvNextCsvLogger {
         "absorption_active",
         "reentry_signal",
         "decision_reason",
+        // ── Rescue / hypo prevention ──
+        "pred60",
+        "rescue_state",
+        "rescue_confidence",
+        "rescue_reason",
 
         // ── Execution ──
         "final_dose",
@@ -98,6 +105,10 @@ object FCLvNextCsvLogger {
         // IOB
         iob: Double,
         iobRatio: Double,
+        bgZone: String,
+        doseAccess: String,
+
+
 
         // model
         effectiveISF: Double,
@@ -133,6 +144,12 @@ object FCLvNextCsvLogger {
         // decision
         decisionReason: String,
 
+        // ── Rescue / hypo prevention ──
+        pred60: Double,
+        rescueState: String,
+        rescueConfidence: Double,
+        rescueReason: String,
+
         // advisor / phase
         minutesSinceCommit: Int,
         suppressForPeak: Boolean,
@@ -166,6 +183,8 @@ object FCLvNextCsvLogger {
                 // IOB/insulin (2 dec)
                 u2(iob),
                 u2(iobRatio),
+                bgZone,
+                doseAccess,
 
                 // trends
                 t2(slope),
@@ -209,6 +228,11 @@ object FCLvNextCsvLogger {
                 absorptionActive,
                 reentrySignal,
                 decisionReason.replace(SEP, ","),
+                // rescue
+                bg1(pred60),
+                rescueState,
+                t2(rescueConfidence),
+                rescueReason.replace(SEP, ","),
 
                 // execution
                 u2(finalDose),

@@ -150,12 +150,12 @@ class DetermineBasalFCL @Inject constructor(
     }
 
     private fun getMaxSafeBasal(profile: OapsProfileFCL): Double =
-        min(profile.max_basal, min(profile.max_daily_safety_multiplier * profile.max_daily_basal, profile.current_basal_safety_multiplier * profile.current_basal))
+        min(profile.max_basal, 25.0)
 
     fun setTempBasal(_rate: Double, duration: Int, profile: OapsProfileFCL, rT: RT, currenttemp: CurrentTemp): RT {
         //var maxSafeBasal = Math.min(profile.max_basal, 3 * profile.max_daily_basal, 4 * profile.current_basal);
 
-        val maxSafeBasal = getMaxSafeBasal(profile)
+        val maxSafeBasal = getMaxSafeBasal(profile) //25.0
         var rate = _rate
         if (rate < 0) rate = 0.0
         else if (rate > maxSafeBasal) rate = maxSafeBasal
@@ -215,227 +215,7 @@ class DetermineBasalFCL @Inject constructor(
             }
     }
 
-/*
 
-    fun getFCLAdvice(profile: OapsProfileFCL, iob_data_array: Array<IobTotal>, sens: Double, target: Double, BgNow: Double): FCL.EnhancedInsulinAdvice {
-        try {
-
-           // Parameters instellen op FCL instance
-            fcl.setCurrentCR(profile.carb_ratio)
-            fcl.setCurrentISF(sens/18)
-            fcl.setTargetBg(target/18)
-            FCLMetrics.setTargetBg(target/18)
-
-            if (preferences.get(BooleanKey.stappenAanUit)) {
-                try {
-                    val now = System.currentTimeMillis()
-                    val timeMillis60 = now - 60 * 60 * 1000 // 60 minutes in milliseconds
-
-                    val SC = persistenceLayer.getStepsCountFromTime(timeMillis60)
-                    if (SC.isNotEmpty()) {
-                        val currentSC = SC.last() // ✅ nieuwste stapdata
-
-                        // ★★★ ROBUUSTE DOORGEVING MET ERROR HANDLING ★★★
-                        fcl.set5minStap(currentSC.steps5min)
-                        fcl.set30minStap(currentSC.steps30min)
-
-
-                    } else {
-                        // ★★★ GEEN DATA - ZET VEILIGE WAARDEN ★★★
-                        fcl.set5minStap(0)
-                        fcl.set30minStap(0)
-
-                    }
-                } catch (e: Exception) {
-                    // ★★★ ERROR HANDLING ★★★
-
-                    fcl.set5minStap(0)
-                    fcl.set30minStap(0)
-                }
-            } else {
-                // ★★★ EXPLICIETE UIT-SCHAKELING ★★★
-                fcl.set5minStap(0)
-                fcl.set30minStap(0)
-            }
-
-
-            val iobArray = iob_data_array
-            val iob_data = iobArray[0]
-            val currentIOB = iob_data.iob
-            val currentISF = sens / 18.0
-
-            val historicalData = getHistoricalBGData(2)
-
-            if (historicalData.size < 10) {
-                return FCL.EnhancedInsulinAdvice(0.0, "Need more BG data: ${historicalData.size}/10 points", 0.0)
-            }
-
-            val currentData = BGDataPoint(
-                timestamp = DateTime(dateUtil.now()),
-                bg = historicalData.last().bg,
-                iob = currentIOB
-            )
-            val target = round(target/18,1)
-            // Gebruik de enhanced versie van FCL
-            return fcl.getEnhancedInsulinAdvice(
-                currentData = currentData,
-                historicalData = historicalData,
-                currentISF = currentISF,
-            //    targetBG = target,
-                carbRatio = profile.carb_ratio,
-                currentIOB = currentIOB,
-            //    maxBolusDay = preferences.get(DoubleKey.max_bolus_day),
-            //    maxBolusNight = preferences.get(DoubleKey.max_bolus_night),
-                maxIOB = profile.max_iob,
-            )
-
-        } catch (e: Exception) {
-            return FCL.EnhancedInsulinAdvice(0.0, "FCL error: ${e.message}", 0.0)
-        }
-    }
-
-    private var lastParameterLogTime: DateTime = DateTime(0) // Epoch tijd
-    private var lastParameterValues: Map<String, String> = emptyMap()
-
-
-    // ★★★ NIEUWE FUNCTIE VOOR PARAMETERS LOGGING ★★★
-    private fun logFCLParameters() {
-        val dateStr = dateUtil.dateAndTimeString(dateUtil.now())
-        val currentTime = DateTime.now()
-        val shouldLogParameters = shouldLogParametersNow(currentTime)
-
-        if (shouldLogParameters) {
-            val currentParameters = getCurrentFCLParameters()
-            logParametersToFile(currentParameters, dateStr)
-            lastParameterLogTime = currentTime
-            lastParameterValues = currentParameters
-        }
-    }
-
-    private fun shouldLogParametersNow(currentTime: DateTime): Boolean {
-        // Log altijd bij de eerste keer
-        if (lastParameterLogTime.millis == 0L) return true
-
-        // Log als er meer dan 24 uur verstreken is
-        val hoursSinceLastLog = Hours.hoursBetween(lastParameterLogTime, currentTime).hours
-        if (hoursSinceLastLog >= 24) return true
-
-        // Log als parameters gewijzigd zijn
-        val currentParameters = getCurrentFCLParameters()
-        val parametersChanged = currentParameters != lastParameterValues
-        if (parametersChanged) return true
-
-        return false
-    }
-
-    private fun getCurrentFCLParameters(): Map<String, String> {
-        return mapOf(
-
-
-            // veiligheid
-            "max_bolus_day" to round(preferences.get(DoubleKey.max_bolus_day),2).toString(),
-            "max_bolus_night" to round(preferences.get(DoubleKey.max_bolus_night),2).toString(),
-            "max_basaal" to round(preferences.get(DoubleKey.ApsMaxBasal),2).toString(),
-            "max_IOB" to round(preferences.get(DoubleKey.ApsSmbMaxIob),2).toString(),
-            "IOB_strongRise_perc" to preferences.get(IntKey.IOB_strongRise_perc).toString(),
-            "IOB_corr_perc" to preferences.get(IntKey.IOB_corr_perc).toString(),
-
-            // Bolus percentages
-
-            "hybrid_basal_perc" to preferences.get(IntKey.hybrid_basal_perc).toString(),
-            "bolus_perc_day" to preferences.get(IntKey.bolus_perc_day).toString(),
-            "bolus_perc_night" to preferences.get(IntKey.bolus_perc_night).toString(),
-            "bolus_perc_rising" to preferences.get(IntKey.bolus_perc_rising).toString(),
-            "bolus_perc_plateau" to preferences.get(IntKey.bolus_perc_plateau).toString(),
-
-
-            // Fase detectie parameters
-            "phase_rising_slope" to round(preferences.get(DoubleKey.phase_rising_slope),2).toString(),
-            "phase_plateau_slope" to round(preferences.get(DoubleKey.phase_plateau_slope),2).toString(),
-            "phase_peak_slope" to round(preferences.get(DoubleKey.phase_peak_slope),2).toString(),
-            "phase_early_rise_accel" to round(preferences.get(DoubleKey.phase_early_rise_accel),2).toString(),
-            "phase_min_consistency" to round(preferences.get(DoubleKey.phase_min_consistency),2).toString(),
-            "data_smoothing_alpha" to round(preferences.get(DoubleKey.data_smoothing_alpha),2).toString(),
-            "direction_consistency_threshold" to round(preferences.get(DoubleKey.direction_consistency_threshold),2).toString(),
-
-
-
-            // Resistentie parameters
-            "Resistentie" to preferences.get(BooleanKey.Resistentie).toString(),
-            "Min_resistentiePerc" to preferences.get(IntKey.Min_resistentiePerc).toString(),
-            "Max_resistentiePerc" to preferences.get(IntKey.Max_resistentiePerc).toString(),
-            "Dag_resistentiePerc" to preferences.get(IntKey.Dag_resistentiePerc).toString(),
-            "Nacht_resistentiePerc" to preferences.get(IntKey.Nacht_resistentiePerc).toString(),
-            "Dagen_resistentie" to preferences.get(IntKey.Dagen_resistentie).toString(),
-            "Uren_resistentie" to round(preferences.get(DoubleKey.Uren_resistentie),1).toString(),
-            "Dag_resistentie_target" to round(preferences.get(DoubleKey.Dag_resistentie_target),1).toString(),
-            "Nacht_resistentie_target" to round(preferences.get(DoubleKey.Nacht_resistentie_target),1).toString(),
-            "MinDelay_resistentie" to preferences.get(IntKey.MinDelay_resistentie).toString(),
-
-            // Persistent high BG parameters
-            "PersistentAanUit" to preferences.get(BooleanKey.PersistentAanUit).toString(),
-            "persistent_CoolDown" to preferences.get(IntKey.persistent_CoolDown).toString(),
-            "persistent_Dagdrempel" to round(preferences.get(DoubleKey.persistent_Dagdrempel),1).toString(),
-            "persistent_Nachtdrempel" to round(preferences.get(DoubleKey.persistent_Nachtdrempel),1).toString(),
-            "persistent_Dag_MaxBolus" to round(preferences.get(DoubleKey.persistent_Dag_MaxBolus),2).toString(),
-            "persistent_Nacht_MaxBolus" to round(preferences.get(DoubleKey.persistent_Nacht_MaxBolus),2).toString(),
-
-            // Stappen parameters
-            "stappenAanUit" to preferences.get(BooleanKey.stappenAanUit).toString(),
-            "stap_5minuten" to preferences.get(IntKey.stap_5minuten).toString(),
-            "stap_activiteteitPerc" to preferences.get(IntKey.stap_activiteteitPerc).toString(),
-            "stap_TT" to round(preferences.get(DoubleKey.stap_TT),1).toString(),
-            "stap_retentie" to preferences.get(IntKey.stap_retentie).toString(),
-
-            // Maaltijd detectie parameters
-            "carb_percentage" to preferences.get(IntKey.carb_percentage).toString(),
-            "tau_absorption_minutes" to preferences.get(IntKey.tau_absorption_minutes).toString(),
-            "meal_detection_sensitivity" to round(preferences.get(DoubleKey.meal_detection_sensitivity),2).toString(),
-
-
-            // Learning parameters
-            "CarbISF_min_Factor" to round(preferences.get(DoubleKey.CarbISF_min_Factor),2).toString(),
-            "CarbISF_max_Factor" to round(preferences.get(DoubleKey.CarbISF_max_Factor),2).toString(),
-
-            // Tijd parameters
-            "OchtendStart" to preferences.get(StringKey.OchtendStart),
-            "OchtendStartWeekend" to preferences.get(StringKey.OchtendStartWeekend),
-            "NachtStart" to preferences.get(StringKey.NachtStart),
-            "WeekendDagen" to preferences.get(StringKey.WeekendDagen),
-
-
-            // Reset learning
-            "ResetLearning" to preferences.get(BooleanKey.ResetLearning).toString()
-        )
-    }
-
-    private fun logParametersToFile(parameters: Map<String, String>, dateStr: String) {
-        val parametersFile = File(Environment.getExternalStorageDirectory().absolutePath + "/Documents/AAPS/ANALYSE/Parameters.csv")
-
-        // Headers voor parameters CSV
-        val headerRow = "timestamp," + parameters.keys.joinToString(",") + "\n"
-
-        // Data voor parameters CSV
-        val valuesToRecord = "$dateStr," + parameters.values.joinToString(",") + "\n"
-
-        try {
-            if (!parametersFile.exists()) {
-                parametersFile.parentFile?.mkdirs()
-                parametersFile.createNewFile()
-                parametersFile.appendText(headerRow)
-            }
-            parametersFile.appendText(valuesToRecord)
-
-            android.util.Log.d("FCL_PARAMETERS", "Parameters gelogd op $dateStr")
-        } catch (e: Exception) {
-            android.util.Log.e("FCL_PARAMETERS", "Fout bij loggen parameters: ${e.message}")
-        }
-    }
-*/
-
-
-
- // *************************************************************************************************************
 
     fun determine_basal(
         glucose_status: GlucoseStatus, currenttemp: CurrentTemp, iob_data_array: Array<IobTotal>, profile: OapsProfileFCL, autosens_data: AutosensResult, meal_data: MealData,
@@ -692,6 +472,9 @@ class DetermineBasalFCL @Inject constructor(
         //    advice.statusText.split("\n").forEach { consoleError.add(it) }
         //    consoleError.add("\n")
 
+            val learningStatus =
+                fclvNext.getLearningStatus(isNight)
+
             val statusFormatter = FCLvNextStatusFormatter()
 
             val uiText = statusFormatter.buildStatus(
@@ -702,7 +485,8 @@ class DetermineBasalFCL @Inject constructor(
                 shouldDeliver = shouldDeliver,
                 activityLog = activity.log,
                 resistanceLog = resistanceLog,
-                metricsText = fclMetrics?.getUserStatsString()
+                metricsText = fclMetrics?.getUserStatsString(),
+                learningStatusText = learningStatus
             )
 
             // naar console / UI

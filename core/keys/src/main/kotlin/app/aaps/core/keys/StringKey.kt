@@ -58,4 +58,9 @@ enum class StringKey(
     OchtendStartWeekend(key = "OchtendStartWeekend", "08:00"),
     NachtStart(key = "NachtStart", "23:30"),
     WeekendDagen(key = "WeekendDagen", "za,zo"),
+    fcl_vnext_profile(key = "fcl_vnext_profile", "BALANCED"),
+    fcl_vnext_learning_snapshot_json(key = "fcl_vnext_learning_snapshot_json", ""),
+
+
+
 }

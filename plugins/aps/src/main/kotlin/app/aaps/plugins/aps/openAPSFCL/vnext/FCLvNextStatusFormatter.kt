@@ -10,11 +10,215 @@ class FCLvNextStatusFormatter {
         if (history.isNullOrEmpty()) return "Geen recente afleveringen"
 
         return history.joinToString("\n") { (ts, dose) ->
-            "${ts.toString("HH:mm")} ${"%.2f".format(dose)}U"
+            "${ts.toString("HH:mm")}  ${"%.2f".format(dose)}U"
         }
     }
 
+    /**
+     * Haal "PROFILE=..." uit statusText (zoals FCLvNext die toevoegt).
+     * We vermijden startsWith/removePrefix expres (jij kreeg unresolved references).
+     */
+    private fun extractProfileLine(statusText: String?): String? {
+        if (statusText.isNullOrBlank()) return null
+        val lines = statusText.split("\n")
+        for (line in lines) {
+            val t = line.trim()
+            // match exact "PROFILE="
+            if (t.length >= 8 && t.substring(0, 8) == "PROFILE=") {
+                return t // bv "PROFILE=BALANCED"
+            }
+        }
+        return null
+    }
 
+    /**
+     * Haal de blokregels onder "LEARNING ADVICE:" eruit.
+     * In jouw FCLvNext wordt dat zo opgebouwd:
+     *   LEARNING ADVICE:
+     *    - param ↑ conf=.. n=..
+     *    - ...
+     */
+    private fun extractLearningAdviceLines(statusText: String?): List<String> {
+        if (statusText.isNullOrBlank()) return emptyList()
+
+        val lines = statusText.split("\n")
+        var inBlock = false
+        val out = ArrayList<String>()
+
+        for (raw in lines) {
+            val line = raw.trim()
+
+            if (!inBlock) {
+                if (line == "LEARNING ADVICE:") {
+                    inBlock = true
+                }
+                continue
+            }
+
+            // we zitten in het block
+            // stopcriteria: lege regel of een duidelijke sectiewissel
+            if (line.isEmpty()) break
+
+            // jouw advice regels beginnen met "-"
+            if (line.length >= 1 && line[0] == '-') {
+                out.add(line)
+            } else {
+                // als het geen advice-regel meer is, stoppen we om rommel te voorkomen
+                break
+            }
+        }
+
+        return out
+    }
+
+    private fun extractProfileAdviceLine(statusText: String?): String? {
+        if (statusText.isNullOrBlank()) return null
+        for (line in statusText.split("\n")) {
+            val t = line.trim()
+            if (t.length >= 14 && t.substring(0, 14) == "PROFILE ADVICE:") {
+                return t
+            }
+        }
+        return null
+    }
+
+    private fun extractProfileReasonLine(statusText: String?): String? {
+        if (statusText.isNullOrBlank()) return null
+        for (line in statusText.split("\n")) {
+            val t = line.trim()
+            if (t.length >= 15 && t.substring(0, 15) == "PROFILE REASON:") {
+                return t
+            }
+        }
+        return null
+    }
+
+    private fun extractPersistLines(statusText: String?): List<String> {
+        if (statusText.isNullOrBlank()) return emptyList()
+
+        val out = ArrayList<String>()
+        for (line in statusText.split("\n")) {
+            val t = line.trim()
+            if (t.length >= 7 && t.substring(0, 7) == "PERSIST") {
+                out.add(t)
+            }
+        }
+        return out
+    }
+
+
+
+    /**
+     * Maak statusText compacter:
+     * - toont eerst profiel + learning advice (als aanwezig)
+     * - daarna eventueel de rest van statusText (optioneel, compact)
+     */
+    private fun buildFclBlock(advice: FCLvNextAdvice?): String {
+        if (advice == null) return "Geen FCL advies"
+
+        val statusText = advice.statusText ?: ""
+        val profileLine = extractProfileLine(statusText)
+        val profileAdviceLine = extractProfileAdviceLine(statusText)
+        val profileReasonLine = extractProfileReasonLine(statusText)
+        val learningLines = extractLearningAdviceLines(statusText)
+
+        val persistLines = extractPersistLines(statusText)
+
+        val sb = StringBuilder()
+
+        sb.append("🧠 FCL vNext\n")
+        sb.append("─────────────────────\n")
+
+        if (profileLine != null) {
+            sb.append("• ").append(profileLine).append("\n")
+        } else {
+            sb.append("• PROFILE=onbekend (niet gevonden in statusText)\n")
+        }
+
+        if (profileAdviceLine != null) {
+            sb.append("• ").append(profileAdviceLine).append("\n")
+            if (profileReasonLine != null) {
+                sb.append("• ").append(profileReasonLine).append("\n")
+            }
+        }
+
+        if (learningLines.isNotEmpty()) {
+            sb.append("\n")
+            sb.append("📌 Learning adviezen\n")
+            sb.append("─────────────────────\n")
+            learningLines.forEach { line ->
+                sb.append("• ").append(line).append("\n")
+            }
+        }
+
+
+
+        if (persistLines.isNotEmpty()) {
+            sb.append("\n")
+            sb.append("🔁 Persistente correctie\n")
+            sb.append("─────────────────────\n")
+            persistLines.forEach { line ->
+                val human = when {
+                    line.contains("building") ->
+                        "Opbouw: glucose blijft gedurende meerdere metingen verhoogd"
+
+                    line.contains("fire") ->
+                        "Correctie gegeven wegens aanhoudend hoge glucose"
+
+                    line.contains("cooldown") ->
+                        "Wachttijd actief na correctie (veiligheidsinterval)"
+
+                    line.contains("HOLD") ->
+                        "Correctie bewust uitgesteld (stabiliteitsfase)"
+
+                    else ->
+                        line   // fallback: toon originele tekst
+                }
+
+                sb.append("• ").append(human).append("\n")
+            }
+
+        }
+
+        // Optioneel: als je tóch nog debug wil zien, laat hier een compacte excerpt zien.
+        // Nu: alleen de eerste ~25 regels om UI netjes te houden.
+        val lines = statusText.split("\n").map { it.trim() }
+
+        fun section(title: String, filter: (String) -> Boolean) {
+            val block = lines.filter(filter)
+            if (block.isNotEmpty()) {
+                sb.append("\n")
+                sb.append(title).append("\n")
+                sb.append("─────────────────────\n")
+                block.forEach { sb.append(it).append("\n") }
+            }
+        }
+
+// 📈 Trends & dynamiek
+        section("📈 Trend & dynamiek") {
+            it.startsWith("TREND") ||
+                it.startsWith("TrendPersistence") ||
+                it.startsWith("PeakEstimate")
+        }
+
+// 💉 Dosering
+        section("💉 Dosering & beslissingen") {
+            it.startsWith("RawDose") ||
+                it.startsWith("Decision=") ||
+                it.startsWith("Trajectory") ||
+                it.startsWith("ACCESS")
+        }
+
+// ⏳ Timing / commits
+        section("⏳ Timing & commits") {
+            it.startsWith("Commit") ||
+                it.startsWith("OBSERVE") ||
+                it.startsWith("DELIVERY")
+        }
+
+
+        return sb.toString().trimEnd()
+    }
 
     fun buildStatus(
         isNight: Boolean,
@@ -24,7 +228,8 @@ class FCLvNextStatusFormatter {
         shouldDeliver: Boolean,
         activityLog: String?,
         resistanceLog: String?,
-        metricsText: String?
+        metricsText: String?,
+        learningStatusText: String?
     ): String {
 
         val coreStatus = """
@@ -40,6 +245,14 @@ STATUS: (${if (isNight) "'S NACHTS" else "OVERDAG"})
 ${formatDeliveryHistory(advice?.let { deliveryHistory.toList() })}
 """.trimIndent()
 
+        val fclCore = buildFclBlock(advice)
+
+        val learningBlock = learningStatusText ?: """
+🧠 Learning status
+─────────────────────
+Learning actief, maar nog geen gegevens
+""".trimIndent()
+
 
         val activityStatus = """
 🏃 ACTIVITEIT
@@ -53,26 +266,22 @@ ${activityLog ?: "Geen activiteitdata"}
 ${resistanceLog ?: "Geen resistentie-log"}
 """.trimIndent()
 
-        val fclCore = """
-🧠 FCL vNext
-─────────────────────
-${advice?.statusText ?: "Geen FCL advies"}
-""".trimIndent()
-
-        val metricsStatus = metricsText ?: """
+        val metricsStatus = """
 📊 GLUCOSE STATISTIEKEN
 ─────────────────────
-Nog geen data
+${metricsText ?: "Nog geen data"}
 """.trimIndent()
 
         return """
 ════════════════════════
- 🧠 FCL vNext v17.5.3
+ 🧠 FCL vNext v19.2.1
 ════════════════════════
 
 $coreStatus
 
 $fclCore
+
+$learningBlock
 
 $activityStatus
 
@@ -82,5 +291,3 @@ $metricsStatus
 """.trimIndent()
     }
 }
-
-

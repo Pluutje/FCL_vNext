@@ -1,21 +1,104 @@
 package app.aaps.plugins.aps.openAPSFCL.vnext.learning
 
 import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextLearningEpisodeManager.EpisodeOutcome
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextProfile
-import app.aaps.plugins.aps.openAPSFCL.vnext.learning.FCLvNextProfileAdvice
 
 class FCLvNextLearningAdvisor {
 
-    private val stats = ParameterLearningStats()
     // ─────────────────────────────────────────────
-   // Profile learning (fase 2: adviserend)
-   // ─────────────────────────────────────────────
+    // Metrics-based profile hysteresis state
+    // ─────────────────────────────────────────────
+
+    private var lastMetricsProfile: FCLvNextProfile? = null
+    private var metricsEvidenceCount: Int = 0
+    private var lastProfileChangeAt: Long = 0L
+
+    private companion object {
+        const val METRICS_COOLDOWN_MS = 6 * 60 * 60 * 1000L   // 6 uur
+        const val MIN_METRICS_EVIDENCE = 3
+    }
+
+    private var lastMetrics: LearningMetricsSnapshot? = null
+
+    private val stats = ParameterLearningStats()
+
+    // ─────────────────────────────────────────────
+    // Profile learning (fase 2: adviserend)
+    // ─────────────────────────────────────────────
+
     private var lastProfileAdvice: FCLvNextProfileAdvice? = null
     private var profileEvidenceCount: Int = 0
 
     fun getProfileAdvice(): FCLvNextProfileAdvice? = lastProfileAdvice
 
+    fun onMetricsSnapshot(snapshot: LearningMetricsSnapshot) {
+        lastMetrics = snapshot
 
+        runCatching {
+            if (!snapshot.dataQualityOk) return
+
+            var scoreAggressive = 0.0
+            var scoreStrict = 0.0
+
+            // SAFETY
+            if (snapshot.tbr24 > 4.0 || snapshot.tbt24 > 6.0) {
+                scoreStrict += 1.2
+            }
+            if (snapshot.isNight && snapshot.tbr24 > 2.0) {
+                scoreStrict += 0.4
+            }
+
+            // UNDER-TREATMENT
+            if (snapshot.tar24 > 20.0 && snapshot.tir24 < 70.0) {
+                scoreAggressive += 1.0
+            }
+            if (snapshot.tar7d > 18.0) {
+                scoreAggressive += 0.6
+            }
+
+            // GOOD CONTROL → BALANCED
+            val recommended = when {
+                snapshot.tir24 >= 75.0 &&
+                    snapshot.tbr24 < 2.0 &&
+                    snapshot.tar24 < 20.0 ->
+                    FCLvNextProfile.BALANCED
+
+                scoreStrict >= scoreAggressive + 0.6 ->
+                    FCLvNextProfile.STRICT
+
+                scoreAggressive >= scoreStrict + 0.6 ->
+                    FCLvNextProfile.AGGRESSIVE
+
+                else ->
+                    FCLvNextProfile.BALANCED
+            }
+
+            val now = snapshot.timestampMillis
+
+            if (recommended == lastMetricsProfile) {
+                metricsEvidenceCount++
+            } else {
+                lastMetricsProfile = recommended
+                metricsEvidenceCount = 1
+            }
+
+            val cooldownPassed = now - lastProfileChangeAt > METRICS_COOLDOWN_MS
+
+            if (metricsEvidenceCount >= MIN_METRICS_EVIDENCE && cooldownPassed) {
+                lastProfileChangeAt = now
+
+                lastProfileAdvice = FCLvNextProfileAdvice(
+                    recommended = recommended,
+                    confidence = 0.6,
+                    reason =
+                        "metrics: TIR24=${snapshot.tir24.toInt()}% " +
+                            "TAR24=${snapshot.tar24.toInt()}% " +
+                            "TBR24=${snapshot.tbr24.toInt()}% " +
+                            "night=${snapshot.isNight}",
+                    evidenceCount = metricsEvidenceCount
+                )
+            }
+        }
+    }
 
     fun onEpisodeOutcome(
         outcome: EpisodeOutcome,
@@ -35,13 +118,14 @@ class FCLvNextLearningAdvisor {
         }
 
         // ─────────────────────────────────────────────
-// Profile advice (v1 – deterministic & explainable)
-// ─────────────────────────────────────────────
+        // Profile advice (v1 – deterministic & explainable)
+        // ─────────────────────────────────────────────
+
         var scoreAggressive = 0.0
         var scoreStrict = 0.0
         var evidence = 0
 
-// 1️⃣ Outcome-based signal
+        // 1️⃣ Outcome-based signal
         when (outcome) {
             EpisodeOutcome.TOO_LATE -> {
                 scoreAggressive += 1.0
@@ -65,7 +149,7 @@ class FCLvNextLearningAdvisor {
             }
         }
 
-// 2️⃣ Peak severity (alleen relevant bij maaltijd-context)
+        // 2️⃣ Peak severity (alleen relevant bij maaltijd-context)
         if (mealActive && peakBand >= 15) {
             scoreAggressive += 0.8
             evidence++
@@ -74,18 +158,18 @@ class FCLvNextLearningAdvisor {
             evidence++
         }
 
-// 3️⃣ Rescue is extra safety-signaal
+        // 3️⃣ Rescue is extra safety-signaal
         if (rescueConfirmed) {
             scoreStrict += 0.6
             evidence++
         }
 
-// 4️⃣ Nacht-bias → iets conservatiever adviseren
+        // 4️⃣ Nacht-bias → iets conservatiever adviseren
         if (isNight) {
             scoreStrict += 0.2
         }
 
-// 5️⃣ Beslis aanbevolen profiel
+        // 5️⃣ Beslis aanbevolen profiel
         val recommendedProfile = when {
             scoreStrict >= scoreAggressive + 0.6 ->
                 FCLvNextProfile.STRICT
@@ -97,12 +181,12 @@ class FCLvNextLearningAdvisor {
                 FCLvNextProfile.BALANCED
         }
 
-// Confidence = verschil tussen scores
+        // Confidence = verschil tussen scores
         val confidence =
             kotlin.math.abs(scoreAggressive - scoreStrict)
                 .coerceIn(0.0, 1.0)
 
-// Verklarende reden (voor UI / status)
+        // Verklarende reden (voor UI / status)
         val reason = buildString {
             append("scores: agg=${"%.2f".format(scoreAggressive)} ")
             append("strict=${"%.2f".format(scoreStrict)}. ")
@@ -122,34 +206,10 @@ class FCLvNextLearningAdvisor {
             reason = reason,
             evidenceCount = profileEvidenceCount
         )
-
     }
 
     fun getAdvice(isNight: Boolean): List<LearningAdvice> =
         stats.allAdvice(isNight)
-
-    // ─────────────────────────────────────────────
-    // Persistence support
-    // ─────────────────────────────────────────────
-
-    fun exportSnapshot(): FCLvNextLearningSnapshot =
-        FCLvNextLearningSnapshot(
-            schemaVersion = 1,
-            dayStats = stats.exportDayStats(),
-            nightStats = stats.exportNightStats(),
-            profileAdvice = lastProfileAdvice,
-            profileEvidenceCount = profileEvidenceCount
-        )
-
-    fun importSnapshot(snapshot: FCLvNextLearningSnapshot) {
-        if (snapshot.schemaVersion != 1) return
-
-        stats.importDayStats(snapshot.dayStats)
-        stats.importNightStats(snapshot.nightStats)
-
-        lastProfileAdvice = snapshot.profileAdvice
-        profileEvidenceCount = snapshot.profileEvidenceCount
-    }
 
     fun getLearningStatus(isNight: Boolean): String {
         val sb = StringBuilder()
@@ -190,5 +250,27 @@ class FCLvNextLearningAdvisor {
         return sb.toString().trimEnd()
     }
 
+    // ─────────────────────────────────────────────
+// Persistence support
+// ─────────────────────────────────────────────
+
+    fun exportSnapshot(): FCLvNextLearningSnapshot =
+        FCLvNextLearningSnapshot(
+            schemaVersion = 1,
+            dayStats = stats.exportDayStats(),
+            nightStats = stats.exportNightStats(),
+            profileAdvice = lastProfileAdvice,
+            profileEvidenceCount = profileEvidenceCount
+        )
+
+    fun importSnapshot(snapshot: FCLvNextLearningSnapshot) {
+        if (snapshot.schemaVersion != 1) return
+
+        stats.importDayStats(snapshot.dayStats)
+        stats.importNightStats(snapshot.nightStats)
+
+        lastProfileAdvice = snapshot.profileAdvice
+        profileEvidenceCount = snapshot.profileEvidenceCount
+    }
 
 }

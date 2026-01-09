@@ -70,22 +70,12 @@ enum class IntKey(
 
     // eigen
 
-
     stap_activiteteitPerc("stap_activiteteitPerc", 50,10,100),
     stap_5minuten("stap_5minuten", 200,100,400),
     stap_retentie("stap_retentie", 6,2,12),
 
-    hybrid_basal_perc("hybrid_basal_perc", 30,0,100),
     bolus_perc_day("bolus_perc_day", 100,10,200),
 
-    fcl_vnext_absorption_window_minutes("fcl_vnext_absorption_window_minutes", 60,20,180),
-
-    Min_resistentiePerc("Min_resistentiePerc", 80,10,100),
-    Max_resistentiePerc("Max_resistentiePerc", 120,100,200),
-    Dag_resistentiePerc("Dag_resistentiePerc", 100,10,200),
-    Nacht_resistentiePerc("Nacht_resistentiePerc", 100,10,200),
-    Dagen_resistentie("Dagen_resistentie", 3,1,7),
-    MinDelay_resistentie("MinDelay_resistentie", 0,-60,120),
 
 
 

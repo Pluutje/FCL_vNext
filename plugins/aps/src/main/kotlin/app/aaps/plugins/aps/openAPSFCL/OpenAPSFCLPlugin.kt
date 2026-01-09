@@ -69,7 +69,8 @@ import app.aaps.core.validators.preferences.AdaptiveIntPreference
 import app.aaps.core.validators.preferences.AdaptiveIntentPreference
 import app.aaps.core.validators.preferences.AdaptiveListPreference
 import app.aaps.core.validators.preferences.AdaptiveStringPreference
-
+import app.aaps.core.validators.preferences.AdaptiveTimePreference
+import app.aaps.core.validators.preferences.AdaptiveCsvMultiSelectPreference
 import app.aaps.core.validators.preferences.AdaptiveSwitchPreference
 import app.aaps.core.validators.preferences.AdaptiveUnitPreference
 import app.aaps.plugins.aps.OpenAPSFragment
@@ -194,8 +195,8 @@ open class OpenAPSFCLPlugin @Inject constructor(
     override fun preprocessPreferences(preferenceFragment: PreferenceFragmentCompat) {
         super.preprocessPreferences(preferenceFragment)
 
-        val smbEnabled = preferences.get(BooleanKey.ApsUseSmb)
-        val smbAlwaysEnabled = preferences.get(BooleanKey.ApsUseSmbAlways)
+        val smbEnabled = true //preferences.get(BooleanKey.ApsUseSmb)
+        val smbAlwaysEnabled = true // preferences.get(BooleanKey.ApsUseSmbAlways)
         val uamEnabled = true //preferences.get(BooleanKey.ApsUseUam)
         val advancedFiltering = activePlugin.activeBgSource.advancedFilteringSupported()
         //val autoSensOrDynIsfSensEnabled = if (preferences.get(BooleanKey.ApsUseDynamicSensitivity)) {
@@ -422,7 +423,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
         val oapsProfile = OapsProfileFCL(
             dia = 0.0, // not used
             min_5m_carbimpact = 0.0, // not used
-            max_iob = constraintsChecker.getMaxIOBAllowed().also { inputConstraints.copyReasons(it) }.value(),
+            max_iob = preferences.get(DoubleKey.fcl_vnext_MaxIOB), //constraintsChecker.getMaxIOBAllowed().also { inputConstraints.copyReasons(it) }.value(),
             max_daily_basal = profile.getMaxDailyBasal(),
             max_basal = 25.0, //constraintsChecker.getMaxBasalAllowed(profile).also { inputConstraints.copyReasons(it) }.value(),
             min_bg = minBg,
@@ -524,7 +525,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
 
     override fun applyBasalConstraints(absoluteRate: Constraint<Double>, profile: Profile): Constraint<Double> {
         if (isEnabled()) {
-            var maxBasal = preferences.get(DoubleKey.ApsMaxBasal)
+            var maxBasal = 25.0 //preferences.get(DoubleKey.ApsMaxBasal)
             if (maxBasal < profile.getMaxDailyBasal()) {
                 maxBasal = profile.getMaxDailyBasal()
                 absoluteRate.addReason(rh.gs(R.string.increasing_max_basal), this)
@@ -532,14 +533,14 @@ open class OpenAPSFCLPlugin @Inject constructor(
             absoluteRate.setIfSmaller(maxBasal, rh.gs(app.aaps.core.ui.R.string.limitingbasalratio, maxBasal, rh.gs(R.string.maxvalueinpreferences)), this)
 
             // Check percentRate but absolute rate too, because we know real current basal in pump
-            val maxBasalMultiplier = preferences.get(DoubleKey.ApsMaxCurrentBasalMultiplier)
+            val maxBasalMultiplier = 500.0 // preferences.get(DoubleKey.ApsMaxCurrentBasalMultiplier)
             val maxFromBasalMultiplier = floor(maxBasalMultiplier * profile.getBasal() * 100) / 100
             absoluteRate.setIfSmaller(
                 maxFromBasalMultiplier,
                 rh.gs(app.aaps.core.ui.R.string.limitingbasalratio, maxFromBasalMultiplier, rh.gs(R.string.max_basal_multiplier)),
                 this
             )
-            val maxBasalFromDaily = preferences.get(DoubleKey.ApsMaxDailyMultiplier)
+            val maxBasalFromDaily = 500.0 //preferences.get(DoubleKey.ApsMaxDailyMultiplier)
             val maxFromDaily = floor(profile.getMaxDailyBasal() * maxBasalFromDaily * 100) / 100
             absoluteRate.setIfSmaller(maxFromDaily, rh.gs(app.aaps.core.ui.R.string.limitingbasalratio, maxFromDaily, rh.gs(R.string.max_daily_basal_multiplier)), this)
         }
@@ -547,7 +548,7 @@ open class OpenAPSFCLPlugin @Inject constructor(
     }
 
     override fun isSMBModeEnabled(value: Constraint<Boolean>): Constraint<Boolean> {
-        val enabled = preferences.get(BooleanKey.ApsUseSmb)
+        val enabled = true //preferences.get(BooleanKey.ApsUseSmb)
         if (!enabled) value.set(false, rh.gs(R.string.smb_disabled_in_preferences), this)
         return value
     }
@@ -590,40 +591,63 @@ open class OpenAPSFCLPlugin @Inject constructor(
         requiredKey: String?
     ) {
 
+        // =================================================
+        // INTRO
+        // =================================================
+        parent.addPreference(
+            Preference(context).apply {
+                key = "FCLvNextIntro"
+                isSelectable = false
+                summary = context.getString(R.string.fcl_vnext_intro)
+            }
+        )
+        parent.addPreference(
+            Preference(context).apply {
+                key = "FCLvNextIntroText"
+                isSelectable = false
+                summary = context.getString(R.string.fcl_vnext_intro_text1)
+            }
+        )
+        parent.addPreference(
+            Preference(context).apply {
+                key = "FCLvNextIntroText"
+                isSelectable = false
+                summary = context.getString(R.string.fcl_vnext_intro_text2)
+            }
+        )
+
+        parent.addPreference(
+            AdaptiveIntentPreference(
+                ctx = context,
+                intentKey = IntentKey.ApsLinkToDocs,
+                intent = Intent(Intent.ACTION_VIEW).apply {
+                    data = Uri.parse(context.getString(R.string.fcl_vnext_0_FCLvNext_algemeen_url))
+                },
+                title = R.string.fcl_vnext_0_FCLvNext_algemeen_title,
+                summary = R.string.fcl_vnext_0_FCLvNext_algemeen_summary
+            )
+        )
 
         // =================================================
-        // 1) ⚙️ ALGEMEEN GEDRAG
+        // 1️⃣ ALGEMEEN GEDRAG
         // =================================================
         val GENERAL = preferenceManager.createPreferenceScreen(context).apply {
             key = "FCLvNextGeneral"
             title = "⚙️ Algemeen gedrag"
             initialExpandedChildrenCount = Int.MAX_VALUE
 
-
-
-            addPreference(
-                Preference(context).apply {
-                    key = "FCLvNextGeneralIntro"
-                    isSelectable = false
-                    summary = context.getString(R.string.fcl_vnext_general_intro)
-                }
-            )
-
             addPreference(
                 AdaptiveIntentPreference(
                     ctx = context,
                     intentKey = IntentKey.ApsLinkToDocs,
                     intent = Intent(Intent.ACTION_VIEW).apply {
-                        data = Uri.parse(context.getString(R.string.fcl_vnext_general_docs_url))
+                        data = Uri.parse(context.getString(R.string.fcl_vnext_1_ALGEMEEN_GEDRAG_url))
                     },
-                    title = R.string.fcl_vnext_general_docs_title,
-                    summary = R.string.fcl_vnext_general_docs_summary
+                    title = R.string.fcl_vnext_1_ALGEMEEN_GEDRAG_title,
+                    summary = R.string.fcl_vnext_1_ALGEMEEN_GEDRAG_summary
                 )
             )
 
-            addPreference(PreferenceCategory(context).apply { title = "⭐ Kerninstellingen" })
-
-            // gain dag/nacht
             addPreference(
                 AdaptiveDoublePreference(
                     ctx = context,
@@ -635,21 +659,21 @@ open class OpenAPSFCLPlugin @Inject constructor(
             addPreference(
                 AdaptiveDoublePreference(
                     ctx = context,
+                    doubleKey = DoubleKey.max_bolus_day,
+                    dialogMessage = R.string.max_bolus_day_summary,
+                    title = R.string.max_bolus_day_title
+                )
+            )
+
+            addPreference(
+                AdaptiveDoublePreference(
+                    ctx = context,
                     doubleKey = DoubleKey.fcl_vnext_gain_night,
                     dialogMessage = R.string.fcl_vnext_gain_night_summary,
                     title = R.string.fcl_vnext_gain_night_title
                 )
             )
 
-            // max bolus dag/nacht (maxSMB)
-            addPreference(
-                AdaptiveDoublePreference(
-                    ctx = context,
-                    doubleKey = DoubleKey.max_bolus_day,
-                    dialogMessage = R.string.max_bolus_day_summary,
-                    title = R.string.max_bolus_day_title
-                )
-            )
             addPreference(
                 AdaptiveDoublePreference(
                     ctx = context,
@@ -658,82 +682,39 @@ open class OpenAPSFCLPlugin @Inject constructor(
                     title = R.string.max_bolus_night_title
                 )
             )
-
-            // hybrid split
             addPreference(
-                AdaptiveIntPreference(
+                AdaptiveDoublePreference(
                     ctx = context,
-                    intKey = IntKey.hybrid_basal_perc,
-                    dialogMessage = R.string.hybrid_basal_perc_summary,
-                    title = R.string.hybrid_basal_perc_title
+                    doubleKey = DoubleKey.fcl_vnext_MaxIOB,
+                    dialogMessage = R.string.fcl_vnext_MaxIOB_summary,
+                    title = R.string.fcl_vnext_MaxIOB_title
                 )
             )
 
-            // Expert subscreen (k-waardes)
-            addPreference(
-                preferenceManager.createPreferenceScreen(context).apply {
-                    key = "FCLvNextGeneralExpert"
-                    title = "▾ Geavanceerd (expert)"
-                    initialExpandedChildrenCount = Int.MAX_VALUE
 
-
-
-                    addPreference(
-                        AdaptiveDoublePreference(
-                            ctx = context,
-                            doubleKey = DoubleKey.fcl_vnext_k_delta,
-                            dialogMessage = R.string.fcl_vnext_k_delta_summary,
-                            title = R.string.fcl_vnext_k_delta_title
-                        )
-                    )
-                    addPreference(
-                        AdaptiveDoublePreference(
-                            ctx = context,
-                            doubleKey = DoubleKey.fcl_vnext_k_slope,
-                            dialogMessage = R.string.fcl_vnext_k_slope_summary,
-                            title = R.string.fcl_vnext_k_slope_title
-                        )
-                    )
-                    addPreference(
-                        AdaptiveDoublePreference(
-                            ctx = context,
-                            doubleKey = DoubleKey.fcl_vnext_k_accel,
-                            dialogMessage = R.string.fcl_vnext_k_accel_summary,
-                            title = R.string.fcl_vnext_k_accel_title
-                        )
-                    )
-                }
-            )
         }
 
         // =================================================
-        // 2) 🧬 PROFIELEN & CONTEXT (DAG/NACHT, RESISTENTIE, ACTIVITEIT)
+        // 2️⃣ PROFIEL
         // =================================================
         val PROFILES = preferenceManager.createPreferenceScreen(context).apply {
             key = "FCLvNextProfiles"
-            title = "🧬 Profielen & context"
+            title = "🧬 Profiel"
             initialExpandedChildrenCount = Int.MAX_VALUE
-
-            addPreference(
-                Preference(context).apply {
-                    key = "FCLvNextProfilesIntro"
-                    isSelectable = false
-                    summary = context.getString(R.string.fcl_vnext_profiles_intro)
-                }
-            )
 
             addPreference(
                 AdaptiveIntentPreference(
                     ctx = context,
                     intentKey = IntentKey.ApsLinkToDocs,
                     intent = Intent(Intent.ACTION_VIEW).apply {
-                        data = Uri.parse(context.getString(R.string.fcl_vnext_profiles_docs_url))
+                        data = Uri.parse(context.getString(R.string.fcl_vnext_2_PROFIEL_url))
                     },
-                    title = R.string.fcl_vnext_profiles_docs_title,
-                    summary = R.string.fcl_vnext_profiles_docs_summary
+                    title = R.string.fcl_vnext_1_PROFIEL_title,
+                    summary = R.string.fcl_vnext_1_PROFIEL_summary
                 )
             )
 
+            // Profielkeuze
             addPreference(
                 AdaptiveListPreference(
                     ctx = context,
@@ -751,467 +732,274 @@ open class OpenAPSFCLPlugin @Inject constructor(
                 )
             )
 
+            // Meal detect speed (timing)
+            addPreference(
+                AdaptiveListPreference(
+                    ctx = context,
+                    stringKey = StringKey.fcl_vnext_meal_detect_speed,
+                    title = R.string.fcl_vnext_meal_detect_speed_title,
+                    summary = R.string.fcl_vnext_meal_detect_speed_summary,
+                    entries = context.resources
+                        .getStringArray(R.array.fcl_vnext_meal_detect_speed_entries)
+                        .map { it as CharSequence }
+                        .toTypedArray(),
+                    entryValues = context.resources
+                        .getStringArray(R.array.fcl_vnext_meal_detect_speed_values)
+                        .map { it as CharSequence }
+                        .toTypedArray()
+                )
+            )
+            // Correction style (post-meal / persistent behavior)
+            addPreference(
+                AdaptiveListPreference(
+                    ctx = context,
+                    stringKey = StringKey.fcl_vnext_correction_style,
+                    title = R.string.fcl_vnext_correction_style_title,
+                    summary = R.string.fcl_vnext_correction_style_summary,
+                    entries = context.resources
+                        .getStringArray(R.array.fcl_vnext_correction_style_entries)
+                        .map { it as CharSequence }
+                        .toTypedArray(),
+                    entryValues = context.resources
+                        .getStringArray(R.array.fcl_vnext_correction_style_values)
+                        .map { it as CharSequence }
+                        .toTypedArray()
+                )
+            )
+            // Insulin distribution
+            addPreference(
+                AdaptiveListPreference(
+                    ctx = context,
+                    stringKey = StringKey.fcl_vnext_dose_distribution_style,
+                    title = R.string.fcl_vnext_dose_distribution_title,
+                    summary = R.string.fcl_vnext_dose_distribution_summary,
+                    entries = context.resources
+                        .getStringArray(R.array.fcl_vnext_dose_distribution_entries)
+                        .map { it as CharSequence }
+                        .toTypedArray(),
+                    entryValues = context.resources
+                        .getStringArray(R.array.fcl_vnext_dose_distribution_values)
+                        .map { it as CharSequence }
+                        .toTypedArray()
+                )
+            )
 
 
-            // 🌙 DAG-NACHT CYCLUS (1-op-1)
-            val DAGNACHTCYCLUS = preferenceManager.createPreferenceScreen(context).apply {
-                key = "DAG-NACHTCYCLUS"
-                title = "\uD83C\uDF19 DAG-NACHT CYCLUS"
-                initialExpandedChildrenCount = Int.MAX_VALUE
-
-                addPreference(
-                    AdaptiveIntentPreference(
-                        ctx = context,
-                        intentKey = IntentKey.ApsLinkToDocs,
-                        intent = Intent().apply {
-                            action = Intent.ACTION_VIEW
-                            data = Uri.parse(rh.gs(R.string.Info_fcl_7_DAGNACHTCYCLUS_doc))
-                        },
-                        summary = R.string.Info_fcl_7_DAGNACHTCYCLUS
-                    )
-                )
-
-                addPreference(
-                    AdaptiveStringPreference(
-                        ctx = context,
-                        stringKey = StringKey.WeekendDagen,
-                        dialogMessage = R.string.WeekendDagen_summary,
-                        title = R.string.WeekendDagen_title
-                    )
-                )
-                addPreference(
-                    AdaptiveStringPreference(
-                        ctx = context,
-                        stringKey = StringKey.OchtendStart,
-                        dialogMessage = R.string.OchtendStart_summary,
-                        title = R.string.OchtendStart_title
-                    )
-                )
-                addPreference(
-                    AdaptiveStringPreference(
-                        ctx = context,
-                        stringKey = StringKey.OchtendStartWeekend,
-                        dialogMessage = R.string.OchtendStartWeekend_summary,
-                        title = R.string.OchtendStartWeekend_title
-                    )
-                )
-                addPreference(
-                    AdaptiveStringPreference(
-                        ctx = context,
-                        stringKey = StringKey.NachtStart,
-                        dialogMessage = R.string.NachtStart_summary,
-                        title = R.string.NachtStart_title
-                    )
-                )
-            }
-            addPreference(DAGNACHTCYCLUS)
-
-            // 🛡️ RESISTENTIE INSTELLINGEN (1-op-1, alle 10)
-            val RESISTENTIEINSTELLINGEN = preferenceManager.createPreferenceScreen(context).apply {
-                key = "RESISTENTIEINSTELLINGEN"
-                title = " \uD83D\uDEE1\uFE0F RESISTENTIE INSTELLINGEN"
-                initialExpandedChildrenCount = Int.MAX_VALUE
-
-                addPreference(
-                    AdaptiveIntentPreference(
-                        ctx = context,
-                        intentKey = IntentKey.ApsLinkToDocs,
-                        intent = Intent().apply {
-                            action = Intent.ACTION_VIEW
-                            data = Uri.parse(rh.gs(R.string.Info_fcl_4_RESISTENTIEINSTELLINGEN_doc))
-                        },
-                        summary = R.string.Info_fcl_4_RESISTENTIEINSTELLINGEN
-                    )
-                )
-
-                addPreference(
-                    AdaptiveSwitchPreference(
-                        ctx = context,
-                        booleanKey = BooleanKey.Resistentie,
-                        title = R.string.Titel_resistentie
-                    )
-                )
-                addPreference(
-                    AdaptiveIntPreference(
-                        ctx = context,
-                        intKey = IntKey.Min_resistentiePerc,
-                        dialogMessage = R.string.min_resistentiePerc_summary,
-                        title = R.string.min_resistentiePerc_title
-                    )
-                )
-                addPreference(
-                    AdaptiveIntPreference(
-                        ctx = context,
-                        intKey = IntKey.Max_resistentiePerc,
-                        dialogMessage = R.string.max_resistentiePerc_summary,
-                        title = R.string.max_resistentiePerc_title
-                    )
-                )
-                addPreference(
-                    AdaptiveIntPreference(
-                        ctx = context,
-                        intKey = IntKey.Dag_resistentiePerc,
-                        dialogMessage = R.string.dag_resistentiePerc_summary,
-                        title = R.string.dag_resistentiePerc_title
-                    )
-                )
-                addPreference(
-                    AdaptiveDoublePreference(
-                        ctx = context,
-                        doubleKey = DoubleKey.Dag_resistentie_target,
-                        dialogMessage = R.string.dag_resistentie_target_summary,
-                        title = R.string.dag_resistentie_target_title
-                    )
-                )
-                addPreference(
-                    AdaptiveIntPreference(
-                        ctx = context,
-                        intKey = IntKey.Nacht_resistentiePerc,
-                        dialogMessage = R.string.nacht_resistentiePerc_summary,
-                        title = R.string.nacht_resistentiePerc_title
-                    )
-                )
-                addPreference(
-                    AdaptiveDoublePreference(
-                        ctx = context,
-                        doubleKey = DoubleKey.Nacht_resistentie_target,
-                        dialogMessage = R.string.nacht_resistentie_target_summary,
-                        title = R.string.nacht_resistentie_target_title
-                    )
-                )
-                addPreference(
-                    AdaptiveIntPreference(
-                        ctx = context,
-                        intKey = IntKey.Dagen_resistentie,
-                        dialogMessage = R.string.Dagen_resistentie_summary,
-                        title = R.string.Dagen_resistentie_title
-                    )
-                )
-                addPreference(
-                    AdaptiveDoublePreference(
-                        ctx = context,
-                        doubleKey = DoubleKey.Uren_resistentie,
-                        dialogMessage = R.string.Uren_resistentie_summary,
-                        title = R.string.Uren_resistentie_title
-                    )
-                )
-                addPreference(
-                    AdaptiveIntPreference(
-                        ctx = context,
-                        intKey = IntKey.MinDelay_resistentie,
-                        dialogMessage = R.string.MinDelay_resistentie_summary,
-                        title = R.string.MinDelay_resistentie_title
-                    )
-                )
-            }
-            addPreference(RESISTENTIEINSTELLINGEN)
-
-            // 🚶 ACTIVITEIT & BEWEGING (1-op-1)
-            val ACTIVITEITBEWEGING = preferenceManager.createPreferenceScreen(context).apply {
-                key = "ACTIVITEIT & BEWEGING"
-                title = "\uD83D\uDEB6 ACTIVITEIT & BEWEGING"
-                initialExpandedChildrenCount = Int.MAX_VALUE
-
-                addPreference(
-                    AdaptiveIntentPreference(
-                        ctx = context,
-                        intentKey = IntentKey.ApsLinkToDocs,
-                        intent = Intent().apply {
-                            action = Intent.ACTION_VIEW
-                            data = Uri.parse(rh.gs(R.string.Info_fcl_9_ACTIVITEITBEWEGING_doc))
-                        },
-                        summary = R.string.Info_fcl_9_ACTIVITEITBEWEGING
-                    )
-                )
-
-                addPreference(
-                    AdaptiveSwitchPreference(
-                        ctx = context,
-                        booleanKey = BooleanKey.stappenAanUit,
-                        summary = R.string.stappenAanUit_summary,
-                        title = R.string.stappenAanUit_title
-                    )
-                )
-                addPreference(
-                    AdaptiveIntPreference(
-                        ctx = context,
-                        intKey = IntKey.stap_activiteteitPerc,
-                        dialogMessage = R.string.stap_activiteteitPerc_summary,
-                        title = R.string.stap_activiteteitPerc_title
-                    )
-                )
-                addPreference(
-                    AdaptiveDoublePreference(
-                        ctx = context,
-                        doubleKey = DoubleKey.stap_TT,
-                        dialogMessage = R.string.stap_TT_summary,
-                        title = R.string.stap_TT_title
-                    )
-                )
-                addPreference(
-                    AdaptiveIntPreference(
-                        ctx = context,
-                        intKey = IntKey.stap_5minuten,
-                        dialogMessage = R.string.stap_5minuten_summary,
-                        title = R.string.stap_5minuten_title
-                    )
-                )
-                addPreference(
-                    AdaptiveIntPreference(
-                        ctx = context,
-                        intKey = IntKey.stap_retentie,
-                        dialogMessage = R.string.stap_retentie_summary,
-                        title = R.string.stap_retentie_title
-                    )
-                )
-            }
-            addPreference(ACTIVITEITBEWEGING)
         }
 
         // =================================================
-        // 3) 🛡️ VEILIGHEID & GRENZEN (alle safety/IOB params + commit_iob_power)
+        // 2️⃣ CONTEXT
         // =================================================
-        val SAFETY = preferenceManager.createPreferenceScreen(context).apply {
-            key = "FCLvNextSafety"
-            title = "🛡️ Veiligheid & grenzen"
+        val CONTEXT = preferenceManager.createPreferenceScreen(context).apply {
+            key = "FCLvNextContext"
+            title = "🌙  🛡️  🚶  Context"
             initialExpandedChildrenCount = Int.MAX_VALUE
-
-            addPreference(
-                Preference(context).apply {
-                    key = "FCLvNextSafetyIntro"
-                    isSelectable = false
-                    summary = context.getString(R.string.fcl_vnext_safety_intro)
-                }
-            )
 
             addPreference(
                 AdaptiveIntentPreference(
                     ctx = context,
                     intentKey = IntentKey.ApsLinkToDocs,
                     intent = Intent(Intent.ACTION_VIEW).apply {
-                        data = Uri.parse(context.getString(R.string.fcl_vnext_safety_docs_url))
+                        data = Uri.parse(context.getString(R.string.fcl_vnext_3_CONTEXT_url))
                     },
-                    title = R.string.fcl_vnext_safety_docs_title,
-                    summary = R.string.fcl_vnext_safety_docs_summary
+                    title = R.string.fcl_vnext_1_CONTEXT_title,
+                    summary = R.string.fcl_vnext_1_CONTEXT_summary
                 )
             )
 
-            addPreference(PreferenceCategory(context).apply { title = "⭐ Kerninstellingen" })
 
+             // ─────────────────────────────────────────────
+            // 🌙 DAG / NACHT (robust input: picker + multiselect)
+            // ─────────────────────────────────────────────
             addPreference(
-                AdaptiveDoublePreference(
-                    ctx = context,
-                    doubleKey = DoubleKey.fcl_vnext_min_consistency,
-                    dialogMessage = R.string.fcl_vnext_min_consistency_summary,
-                    title = R.string.fcl_vnext_min_consistency_title
-                )
-            )
-            addPreference(
-                AdaptiveDoublePreference(
-                    ctx = context,
-                    doubleKey = DoubleKey.fcl_vnext_consistency_exp,
-                    dialogMessage = R.string.fcl_vnext_consistency_exp_summary,
-                    title = R.string.fcl_vnext_consistency_exp_title
-                )
-            )
-            addPreference(
-                AdaptiveDoublePreference(
-                    ctx = context,
-                    doubleKey = DoubleKey.fcl_vnext_iob_start,
-                    dialogMessage = R.string.fcl_vnext_iob_start_summary,
-                    title = R.string.fcl_vnext_iob_start_title
-                )
-            )
-            addPreference(
-                AdaptiveDoublePreference(
-                    ctx = context,
-                    doubleKey = DoubleKey.fcl_vnext_iob_max,
-                    dialogMessage = R.string.fcl_vnext_iob_max_summary,
-                    title = R.string.fcl_vnext_iob_max_title
-                )
-            )
-            addPreference(
-                AdaptiveDoublePreference(
-                    ctx = context,
-                    doubleKey = DoubleKey.fcl_vnext_iob_min_factor,
-                    dialogMessage = R.string.fcl_vnext_iob_min_factor_summary,
-                    title = R.string.fcl_vnext_iob_min_factor_title
-                )
+                preferenceManager.createPreferenceScreen(context).apply {
+                    key = "FCLvNextDayNight"
+                    title = "🌙 Dag / nacht"
+
+                    addPreference(
+                        Preference(context).apply {
+                            isSelectable = false
+                            summary = context.getString(R.string.fcl_vnext_intro)
+                        }
+                    )
+
+                    addPreference(
+                        AdaptiveCsvMultiSelectPreference(
+                            ctx = context,
+                            preferences = preferences,
+                            stringKey = StringKey.WeekendDagen,
+                            titleRes = R.string.WeekendDagen_title,
+                            summaryRes = R.string.WeekendDagen_summary,
+                            entriesRes = R.array.weekday_entries,
+                            entryValuesRes = R.array.weekday_values
+                        )
+                    )
+
+                    addPreference(
+                        AdaptiveTimePreference(
+                            ctx = context,
+                            preferences = preferences,
+                            stringKey = StringKey.OchtendStart,
+                            titleRes = R.string.OchtendStart_title,
+                            summaryRes = R.string.OchtendStart_summary
+                        )
+                    )
+
+                    addPreference(
+                        AdaptiveTimePreference(
+                            ctx = context,
+                            preferences = preferences,
+                            stringKey = StringKey.OchtendStartWeekend,
+                            titleRes = R.string.OchtendStartWeekend_title,
+                            summaryRes = R.string.OchtendStartWeekend_summary
+                        )
+                    )
+
+                    addPreference(
+                        AdaptiveTimePreference(
+                            ctx = context,
+                            preferences = preferences,
+                            stringKey = StringKey.NachtStart,
+                            titleRes = R.string.NachtStart_title,
+                            summaryRes = R.string.NachtStart_summary
+                        )
+                    )
+                }
             )
 
-            addPreference(PreferenceCategory(context).apply { title = "🍽️ Commit gedrag" })
 
+
+            // ─────────────────────────────────────────────
+           // 🛡️ RESISTENTIE (VOLLEDIG)
+          // ─────────────────────────────────────────────
             addPreference(
-                AdaptiveDoublePreference(
-                    ctx = context,
-                    doubleKey = DoubleKey.fcl_vnext_commit_iob_power,
-                    dialogMessage = R.string.fcl_vnext_commit_iob_power_summary,
-                    title = R.string.fcl_vnext_commit_iob_power_title
-                )
+                preferenceManager.createPreferenceScreen(context).apply {
+                    key = "FCLvNextResistance"
+                    title = "🛡️ AutoSens"
+
+                    // Algemene context-intro (optioneel)
+                    addPreference(
+                        Preference(context).apply {
+                            isSelectable = false
+                            summary = context.getString(R.string.fcl_vnext_intro)
+                        }
+                    )
+
+                    // Specifieke AutoSens uitleg
+                    addPreference(
+                        Preference(context).apply {
+                            isSelectable = false
+                            summary = context.getString(R.string.fcl_vnext_resistance_intro)
+                        }
+                    )
+                    // Specifieke AutoSens behavior uitleg
+                    addPreference(
+                        Preference(context).apply {
+                            isSelectable = false
+                            summary = context.getString(R.string.fcl_vnext_resistance_behavior_summary)
+                        }
+                    )
+
+                    // Gedrag
+                    addPreference(
+                        AdaptiveListPreference(
+                            ctx = context,
+                            stringKey = StringKey.fcl_vnext_resistance_behavior,
+                            title = R.string.fcl_vnext_resistance_behavior_title,
+                            entries = context.resources
+                                .getStringArray(R.array.fcl_vnext_resistance_behavior_entries)
+                                .map { it as CharSequence }
+                                .toTypedArray(),
+                            entryValues = context.resources
+                                .getStringArray(R.array.fcl_vnext_resistance_behavior_values)
+                                .map { it as CharSequence }
+                                .toTypedArray()
+                        )
+                    )
+
+                    // Specifieke AutoSens Stabiliteit uitleg
+                    addPreference(
+                        Preference(context).apply {
+                            isSelectable = false
+                            summary = context.getString(R.string.fcl_vnext_resistance_stability_summary)
+                        }
+                    )
+
+                    // Stabiliteit
+                    addPreference(
+                        AdaptiveListPreference(
+                            ctx = context,
+                            stringKey = StringKey.fcl_vnext_resistance_stability,
+                            title = R.string.fcl_vnext_resistance_stability_title,
+                            entries = context.resources
+                                .getStringArray(R.array.fcl_vnext_resistance_stability_entries)
+                                .map { it as CharSequence }
+                                .toTypedArray(),
+                            entryValues = context.resources
+                                .getStringArray(R.array.fcl_vnext_resistance_stability_values)
+                                .map { it as CharSequence }
+                                .toTypedArray()
+                        )
+                    )
+                }
+            )
+
+
+            // ─────────────────────────────────────────────
+            // 🚶 ACTIVITEIT (VOLLEDIG)
+            // ─────────────────────────────────────────────
+            addPreference(
+                preferenceManager.createPreferenceScreen(context).apply {
+                    key = "FCLvNextActivity"
+                    title = "🚶 Activiteit & beweging"
+
+                    addPreference(
+                        Preference(context).apply {
+                            isSelectable = false
+                            summary = context.getString(R.string.fcl_vnext_intro)
+                        }
+                    )
+                    // Specifieke activity uitleg
+                    addPreference(
+                        Preference(context).apply {
+                            isSelectable = false
+                            summary = context.getString(R.string.fcl_vnext_activity_intro)
+                        }
+                    )
+
+                    addPreference(
+                    AdaptiveListPreference(
+                        ctx = context,
+                        stringKey = StringKey.fcl_vnext_activity_behavior,
+                        title = R.string.fcl_vnext_activity_behavior_title,
+                        summary = R.string.fcl_vnext_activity_behavior_summary,
+                        entries = context.resources
+                            .getStringArray(R.array.fcl_vnext_activity_behavior_entries)
+                            .map { it as CharSequence }
+                            .toTypedArray(),
+                        entryValues = context.resources
+                            .getStringArray(R.array.fcl_vnext_activity_behavior_values)
+                            .map { it as CharSequence }
+                            .toTypedArray()
+                    )
+                    )
+
+
+                }
             )
         }
 
+
+
         // =================================================
-        // 4) 📊 ANALYSE & GEAVANCEERD (absorptie + stagnatie + filtering)
+        // ROOT
         // =================================================
-        val ADVANCED = preferenceManager.createPreferenceScreen(context).apply {
-            key = "FCLvNextAdvanced"
-            title = "📊 Analyse & geavanceerd"
-            initialExpandedChildrenCount = Int.MAX_VALUE
-
-            addPreference(
-                Preference(context).apply {
-                    key = "FCLvNextAdvancedIntro"
-                    isSelectable = false
-                    summary = context.getString(R.string.fcl_vnext_advanced_intro)
-                }
-            )
-
-            addPreference(
-                AdaptiveIntentPreference(
-                    ctx = context,
-                    intentKey = IntentKey.ApsLinkToDocs,
-                    intent = Intent(Intent.ACTION_VIEW).apply {
-                        data = Uri.parse(context.getString(R.string.fcl_vnext_advanced_docs_url))
-                    },
-                    title = R.string.fcl_vnext_advanced_docs_title,
-                    summary = R.string.fcl_vnext_advanced_docs_summary
-                )
-            )
-
-            // 🟠 ABSORPTIE & NASLEEP
-            addPreference(
-                preferenceManager.createPreferenceScreen(context).apply {
-                    key = "FCLvNextAbsorption"
-                    title = "🟠 Absorptie & nasleep"
-                    initialExpandedChildrenCount = Int.MAX_VALUE
-
-                    addPreference(
-                        AdaptiveIntPreference(
-                            ctx = context,
-                            intKey = IntKey.fcl_vnext_absorption_window_minutes,
-                            dialogMessage = R.string.fcl_vnext_absorption_window_minutes_summary,
-                            title = R.string.fcl_vnext_absorption_window_minutes_title
-                        )
-                    )
-
-                    addPreference(
-                        AdaptiveDoublePreference(
-                            ctx = context,
-                            doubleKey = DoubleKey.fcl_vnext_absorption_dose_factor,
-                            dialogMessage = R.string.fcl_vnext_absorption_dose_factor_summary,
-                            title = R.string.fcl_vnext_absorption_dose_factor_title
-                        )
-                    )
-                }
-            )
-
-            // 🔁 STAGNATIE (blijvend hoog / plateau)
-            addPreference(
-                preferenceManager.createPreferenceScreen(context).apply {
-                    key = "FCLvNextStagnation"
-                    title = "🔁 Stagnatie (blijvend hoog)"
-                    initialExpandedChildrenCount = Int.MAX_VALUE
-
-                    addPreference(
-                        AdaptiveDoublePreference(
-                            ctx = context,
-                            doubleKey = DoubleKey.fcl_vnext_stagnation_delta_min,
-                            dialogMessage = R.string.fcl_vnext_stagnation_delta_min_summary,
-                            title = R.string.fcl_vnext_stagnation_delta_min_title
-                        )
-                    )
-                    addPreference(
-                        AdaptiveDoublePreference(
-                            ctx = context,
-                            doubleKey = DoubleKey.fcl_vnext_stagnation_slope_max_neg,
-                            dialogMessage = R.string.fcl_vnext_stagnation_slope_max_neg_summary,
-                            title = R.string.fcl_vnext_stagnation_slope_max_neg_title
-                        )
-                    )
-                    addPreference(
-                        AdaptiveDoublePreference(
-                            ctx = context,
-                            doubleKey = DoubleKey.fcl_vnext_stagnation_slope_max_pos,
-                            dialogMessage = R.string.fcl_vnext_stagnation_slope_max_pos_summary,
-                            title = R.string.fcl_vnext_stagnation_slope_max_pos_title
-                        )
-                    )
-                    addPreference(
-                        AdaptiveDoublePreference(
-                            ctx = context,
-                            doubleKey = DoubleKey.fcl_vnext_stagnation_accel_max_abs,
-                            dialogMessage = R.string.fcl_vnext_stagnation_accel_max_abs_summary,
-                            title = R.string.fcl_vnext_stagnation_accel_max_abs_title
-                        )
-                    )
-                    addPreference(
-                        AdaptiveDoublePreference(
-                            ctx = context,
-                            doubleKey = DoubleKey.fcl_vnext_stagnation_energy_boost,
-                            dialogMessage = R.string.fcl_vnext_stagnation_energy_boost_summary,
-                            title = R.string.fcl_vnext_stagnation_energy_boost_title
-                        )
-                    )
-                }
-            )
-
-            // ⚫ FILTERING (expert)
-            addPreference(
-                preferenceManager.createPreferenceScreen(context).apply {
-                    key = "FCLvNextFiltering"
-                    title = "⚫ Data & filtering (expert)"
-                    initialExpandedChildrenCount = Int.MAX_VALUE
-
-                    addPreference(
-                        AdaptiveDoublePreference(
-                            ctx = context,
-                            doubleKey = DoubleKey.fcl_vnext_bg_smoothing_alpha,
-                            dialogMessage = R.string.fcl_vnext_bg_smoothing_alpha_summary,
-                            title = R.string.fcl_vnext_bg_smoothing_alpha_title
-                        )
-                    )
-                }
-            )
-        }
-
-        // ─────────────────────────────────────────────
-        // Root inhoudsopgave: voeg hoofdstukken toe
-        // (BELANGRIJK: alleen ROOT hangt in category)
-        // ─────────────────────────────────────────────
-        // Intro tekst (niet klikbaar)
-        parent.addPreference(Preference(context).apply {
-                key = "FCLvNextIntroText"
-                isSelectable = false
-                summary = context.getString(R.string.fcl_vnext_intro_text)
-            })
-
-        // Link naar algemene docs
-        parent.addPreference( AdaptiveIntentPreference(
-                ctx = context,
-                intentKey = IntentKey.ApsLinkToDocs,
-                intent = Intent(Intent.ACTION_VIEW).apply {
-                    data = Uri.parse(context.getString(R.string.fcl_vnext_docs_overview_url))
-                },
-                title = R.string.fcl_vnext_docs_overview_title,
-                summary = R.string.fcl_vnext_docs_overview_summary
-            ))
-
-
-        parent.addPreference(Preference(context).apply {
-            key = "FCLvNextTocHint"
-            isSelectable = false
-            summary = context.getString(R.string.fcl_vnext_toc_hint)
-        })
-
-     //   parent.addPreference(ROOT)
         parent.addPreference(GENERAL)
         parent.addPreference(PROFILES)
-        parent.addPreference(SAFETY)
-        parent.addPreference(ADVANCED)
-
-     //   category.addPreference(ROOT)
+        parent.addPreference(CONTEXT)
+     //   parent.addPreference(SAFETY)
     }
+
 
 
 

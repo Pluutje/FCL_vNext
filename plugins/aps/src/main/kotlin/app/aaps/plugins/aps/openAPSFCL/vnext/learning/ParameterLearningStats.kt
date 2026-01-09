@@ -29,8 +29,8 @@ class ParameterLearningStats {
         val confidence = abs(s.ema).coerceIn(0.0, 1.0)
 
         // gates tegen ruis
-        if (s.count < 6) return null
-        if (confidence < 0.28) return null
+        if (s.count < 4) return null
+        if (confidence < 0.22) return null
 
         return LearningAdvice(
             parameter = parameter,

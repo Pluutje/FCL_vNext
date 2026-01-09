@@ -27,8 +27,12 @@ object FCLvNextTrends {
         val consistency: Double,        // 0..1
         val directionConsistency: Double, // 0..1
         val magnitudeConsistency: Double, // 0..1
-        val phase: Phase
+        val phase: Phase,
+        // ✅ NEW: short-term direction (fast lane)
+        val recentSlope: Double,        // mmol/L per uur (laatste segment)
+        val recentDelta5m: Double       // mmol/L per 5 min (genormaliseerd)
     )
+
 
     enum class Phase {
         RISING,
@@ -51,7 +55,9 @@ object FCLvNextTrends {
                 consistency = 0.0,
                 directionConsistency = 0.0,
                 magnitudeConsistency = 0.0,
-                phase = Phase.UNKNOWN
+                phase = Phase.UNKNOWN,
+                recentSlope = 0.0,
+                recentDelta5m = 0.0
             )
         }
 
@@ -67,19 +73,55 @@ object FCLvNextTrends {
 
         val phase = determinePhase(first, second, consistency)
 
+        val recentSlope = calculateRecentSlope(data)
+
+
+        val recent = calculateRecentSlope(data)
+
         return RobustTrendAnalysis(
             firstDerivative = first,
             secondDerivative = second,
             consistency = consistency,
             directionConsistency = dirConsistency,
             magnitudeConsistency = magConsistency,
-            phase = phase
+            phase = phase,
+            recentSlope = recent.recentSlope,
+            recentDelta5m = recent.recentDelta5m
         )
     }
 
     // ─────────────────────────────────────────────
     // INTERNAL HELPERS
     // ─────────────────────────────────────────────
+
+    private data class RecentTrend(
+        val recentSlope: Double,    // mmol/L per uur
+        val recentDelta5m: Double   // mmol/L per 5 min (genormaliseerd)
+    )
+
+    private fun calculateRecentSlope(data: List<BGPoint>): RecentTrend {
+        if (data.size < 2) return RecentTrend(0.0, 0.0)
+
+        val a = data[data.size - 2]
+        val b = data[data.size - 1]
+
+        val dtMin = Minutes.minutesBetween(a.time, b.time).minutes
+        if (dtMin <= 0) return RecentTrend(0.0, 0.0)
+
+        val delta = b.bg - a.bg
+        val slopeHr = delta / (dtMin / 60.0)
+
+        // delta per 5 min, genormaliseerd (handig voor thresholds)
+        val delta5m = delta * (5.0 / dtMin.toDouble())
+
+        return RecentTrend(
+            recentSlope = slopeHr,
+            recentDelta5m = delta5m
+        )
+    }
+
+
+
 
     private fun calculateSlopes(data: List<BGPoint>): List<Double> {
         val slopes = mutableListOf<Double>()

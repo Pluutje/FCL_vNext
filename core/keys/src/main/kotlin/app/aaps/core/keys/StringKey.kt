@@ -58,8 +58,20 @@ enum class StringKey(
     OchtendStartWeekend(key = "OchtendStartWeekend", "08:00"),
     NachtStart(key = "NachtStart", "23:30"),
     WeekendDagen(key = "WeekendDagen", "za,zo"),
+
+    fcl_vnext_activity_behavior("fcl_vnext_activity_behavior", "NORMAL"),
+
     fcl_vnext_profile(key = "fcl_vnext_profile", "BALANCED"),
+    fcl_vnext_meal_detect_speed(key = "fcl_vnext_meal_detect_speed", "MODERATE"),
+    fcl_vnext_correction_style(key = "fcl_vnext_correction_style", "NORMAL"),
+    fcl_vnext_dose_distribution_style(key = "fcl_vnext_dose_distribution_style", "BALANCED"),
+
+    fcl_vnext_resistance_behavior("fcl_vnext_resistance_behavior", "NORMAL"),
+    fcl_vnext_resistance_stability("fcl_vnext_resistance_stability", "STANDARD"),
+
     fcl_vnext_learning_snapshot_json(key = "fcl_vnext_learning_snapshot_json", ""),
+    fcl_vnext_learning_parameters_json(key = "fcl_vnext_learning_parameters_json", ""),
+
 
 
 

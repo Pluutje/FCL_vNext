@@ -35,6 +35,12 @@ object FCLvNextCsvLogger {
         "gain",
         "energy_base",
         "energy_total",
+        "kDeltaBase",
+        "kSlopeBase",
+        "kAccelBase",
+        "kDeltaEff",
+        "kSlopeEff",
+        "kAccelEff",
         "stagnation_active",
         "stagnation_boost",
         "stagnation_accel",
@@ -51,6 +57,9 @@ object FCLvNextCsvLogger {
         // ── Decision / phase ──
         "meal_state",
         "commit_fraction",
+        "commit_base_min",
+        "commit_multiplier",
+        "commit_effective_min",
         "minutes_since_commit",
 
         // ── Peak prediction ──
@@ -67,6 +76,7 @@ object FCLvNextCsvLogger {
         "absorption_active",
         "reentry_signal",
         "decision_reason",
+
         // ── Rescue / hypo prevention ──
         "pred60",
         "rescue_state",
@@ -79,6 +89,13 @@ object FCLvNextCsvLogger {
         "delivered_total",
         "bolus",
         "basal_u_h",
+
+        // ── Reserve pool ──
+        "reserve_u",
+        "reserve_action",
+        "reserve_delta_u",
+        "reserve_age_min",
+
         "should_deliver"
     ).joinToString(SEP)
 
@@ -108,13 +125,20 @@ object FCLvNextCsvLogger {
         bgZone: String,
         doseAccess: String,
 
-
-
         // model
         effectiveISF: Double,
         gain: Double,
         energyBase: Double,
         energyTotal: Double,
+
+        // learning (core)
+        kDeltaBase: Double,
+        kSlopeBase: Double,
+        kAccelBase: Double,
+        kDeltaEff: Double,
+        kSlopeEff: Double,
+        kAccelEff: Double,
+
         stagnationActive: Boolean,
         stagnationBoost: Double,
         stagnationAccel: Double,
@@ -122,13 +146,20 @@ object FCLvNextCsvLogger {
 
         rawDose: Double,
         iobFactor: Double,
+        normalDose: Double,
 
-        // dosing
-        finalDose: Double,
-        deliveredTotal: Double,
-        bolus: Double,
-        basalRate: Double,
-        shouldDeliver: Boolean,
+        // early
+        earlyStage: Int,
+        earlyConfidence: Double,
+        earlyTargetU: Double,
+
+        // phase / decision
+        mealState: String,
+        commitFraction: Double,
+        commitBaseMin: Double,
+        commitMultiplier: Double,
+        commitEffectiveMin: Double,
+        minutesSinceCommit: Int,
 
         // peak
         peakState: String,
@@ -141,30 +172,31 @@ object FCLvNextCsvLogger {
         peakRiseSinceStart: Double,
         peakEpisodeActive: Boolean,
 
-        // decision
+        suppressForPeak: Boolean,
+        absorptionActive: Boolean,
+        reentrySignal: Boolean,
         decisionReason: String,
 
-        // ── Rescue / hypo prevention ──
+        // rescue
         pred60: Double,
         rescueState: String,
         rescueConfidence: Double,
         rescueReason: String,
 
-        // advisor / phase
-        minutesSinceCommit: Int,
-        suppressForPeak: Boolean,
-        absorptionActive: Boolean,
-        reentrySignal: Boolean,
-        mealState: String,
-        commitFraction: Double,
-
-        normalDose: Double,
+        // execution
+        finalDose: Double,
         commandedDose: Double,
+        deliveredTotal: Double,
+        bolus: Double,
+        basalRate: Double,
 
-        // early
-        earlyStage: Int,
-        earlyConfidence: Double,
-        earlyTargetU: Double
+        // reserve
+        reserveU: Double,
+        reserveAction: String,
+        reserveDeltaU: Double,
+        reserveAgeMin: Int,
+
+        shouldDeliver: Boolean
     ) {
         try {
             val file = getFile()
@@ -173,14 +205,14 @@ object FCLvNextCsvLogger {
                 ts.toString("yyyy-MM-dd HH:mm:ss"),
                 isNight,
 
-                // BG (1 dec)
+                // BG
                 bg1(bg),
                 bg1(target),
 
-                // delta (2 dec)
+                // delta
                 d2(bg - target),
 
-                // IOB/insulin (2 dec)
+                // IOB
                 u2(iob),
                 u2(iobRatio),
                 bgZone,
@@ -196,6 +228,12 @@ object FCLvNextCsvLogger {
                 u2(gain),
                 e2(energyBase),
                 e2(energyTotal),
+                u2(kDeltaBase),
+                u2(kSlopeBase),
+                u2(kAccelBase),
+                u2(kDeltaEff),
+                u2(kSlopeEff),
+                u2(kAccelEff),
                 stagnationActive,
                 e2(stagnationBoost),
                 a2(stagnationAccel),
@@ -212,6 +250,9 @@ object FCLvNextCsvLogger {
                 // phase
                 mealState,
                 t2(commitFraction),
+                t2(commitBaseMin),
+                t2(commitMultiplier),
+                t2(commitEffectiveMin),
                 minutesSinceCommit,
 
                 // peak
@@ -228,6 +269,7 @@ object FCLvNextCsvLogger {
                 absorptionActive,
                 reentrySignal,
                 decisionReason.replace(SEP, ","),
+
                 // rescue
                 bg1(pred60),
                 rescueState,
@@ -240,6 +282,13 @@ object FCLvNextCsvLogger {
                 u2(deliveredTotal),
                 u2(bolus),
                 u2(basalRate),
+
+                // reserve
+                u2(reserveU),
+                reserveAction,
+                u2(reserveDeltaU),
+                reserveAgeMin,
+
                 shouldDeliver
             ).joinToString(SEP)
 
@@ -249,8 +298,8 @@ object FCLvNextCsvLogger {
             }
 
             val lines = file.readLines().toMutableList()
-
             val body = lines.drop(1).toMutableList()
+
             body.add(0, line)
 
             val trimmed =
@@ -265,11 +314,11 @@ object FCLvNextCsvLogger {
     }
 
     // formatting helpers
-    private fun bg1(x: Double) = String.Companion.format(Locale.US, "%.1f", x) // BG-ish
-    private fun bg2(x: Double) = String.Companion.format(Locale.US, "%.2f", x) // BG-ish but 2 (ISF)
-    private fun d2(x: Double)  = String.Companion.format(Locale.US, "%.2f", x) // delta
-    private fun u2(x: Double)  = String.Companion.format(Locale.US, "%.2f", x) // insulin / IOB
-    private fun a2(x: Double)  = String.Companion.format(Locale.US, "%.2f", x) // accel
-    private fun e2(x: Double)  = String.Companion.format(Locale.US, "%.2f", x) // energy
-    private fun t2(x: Double)  = String.Companion.format(Locale.US, "%.2f", x) // trends/misc
+    private fun bg1(x: Double) = String.format(Locale.US, "%.1f", x)
+    private fun bg2(x: Double) = String.format(Locale.US, "%.2f", x)
+    private fun d2(x: Double)  = String.format(Locale.US, "%.2f", x)
+    private fun u2(x: Double)  = String.format(Locale.US, "%.2f", x)
+    private fun a2(x: Double)  = String.format(Locale.US, "%.2f", x)
+    private fun e2(x: Double)  = String.format(Locale.US, "%.2f", x)
+    private fun t2(x: Double)  = String.format(Locale.US, "%.2f", x)
 }

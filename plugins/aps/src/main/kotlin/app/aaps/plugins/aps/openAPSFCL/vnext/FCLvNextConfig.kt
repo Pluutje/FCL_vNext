@@ -3,219 +3,272 @@ package app.aaps.plugins.aps.openAPSFCL.vnext
 import app.aaps.core.keys.DoubleKey
 import app.aaps.core.keys.IntKey
 import app.aaps.core.keys.Preferences
+import app.aaps.core.keys.StringKey
 import kotlin.Double
 
 data class FCLvNextConfig(
-    // dynamiek
-    val kDelta: Double,
-    val kSlope: Double,
-    val kAccel: Double,
 
-    // betrouwbaarheid
-    val minConsistency: Double,
-    val consistencyExp: Double,
+    // =================================================
+    // 🧭 UI PARAMETERS (via Preferences)
+    // =================================================
+    val gain: Double,
+    val maxSMB: Double,
+    val hybridPercentage: Int,
+    val profielNaam: String,
+    val mealDetectSpeed: String,
+    val correctionStyle: String,
+    val doseDistributionStyle: String,  // ✅ NEW
 
-    // IOB veiligheid
+    // smoothing
+    val bgSmoothingAlpha: Double,
+
+    // IOB safety (UI, want jij logt/zet ze)
     val iobStart: Double,
     val iobMax: Double,
     val iobMinFactor: Double,
 
-    // gain
-    val gain: Double,
+    // commit IOB curve apart (jij hebt key)
+    val commitIobPower: Double,
 
-    // execution
-    val hybridPercentage: Int,
-    // delivery timing & caps
-    val deliveryCycleMinutes: Int,     // bv 5
-    val maxTempBasalRate: Double,      // bv 25.0 (later via prefs)
+    // =================================================
+    // 🧠 LEARNING-BASE (startwaarden, adjuster mag erop)
+    // =================================================
 
-    // SMB safety
-    val maxSMB: Double,
+    // =================================================
+    // 📊 PROFILE — DOSE STRENGTH (STRICT / BALANCED / AGGRESSIVE)
+    // Beïnvloedt ALLEEN dosis-hoogte, niet timing of persistentie
+    // =================================================
 
-    // meal detect (bestaand)
-    val mealSlopeMin: Double,
-    val mealSlopeSpan: Double,
+    val doseStrengthMul: Double,        // globale vermenigvuldiger op finalDose
+    val maxCommitFractionMul: Double,   // schaal op commitFraction
 
-    val mealAccelMin: Double,
-    val mealAccelSpan: Double,
+    // =================================================
+    // ✅ DOSE DISTRIBUTION (4e as)
+    // Beïnvloedt "vorm": basal-vs-SMB split + cap-vorm + tail dosing
+    // =================================================
+    val smallDoseThresholdU: Double,     // in executeDelivery: onder deze dosis → vooral basaal gedrag
+    val microCapFracOfMaxSmb: Double,    // microCap = max(0.05, frac*maxSMB)
+    val smallCapFracOfMaxSmb: Double,    // smallCap = max(0.10, frac*maxSMB)
 
-    val mealDeltaMin: Double,
-    val mealDeltaSpan: Double,
+    val kDelta: Double,
+    val kSlope: Double,
+    val kAccel: Double,
 
-    val mealUncertainConfidence: Double,
-    val mealConfirmConfidence: Double,
-
-    val commitCooldownMinutes: Int,
-
+    // commit fractions (learning beïnvloedt ze via multiplier)
     val uncertainMinFraction: Double,
     val uncertainMaxFraction: Double,
     val confirmMinFraction: Double,
     val confirmMaxFraction: Double,
 
+    // =================================================
+    // 🛡️ CONSTANTS / LOGIC (vaste waarden in code/config)
+    // =================================================
+
+    // betrouwbaarheid
+    val minConsistency: Double,
+    val consistencyExp: Double,
+
+    // execution
+    val deliveryCycleMinutes: Int,
+    val maxTempBasalRate: Double,
+
+    // meal detect (wordt gebruikt in detectMealSignal)
+    val mealSlopeMin: Double,
+    val mealSlopeSpan: Double,
+    val mealAccelMin: Double,
+    val mealAccelSpan: Double,
+    val mealDeltaMin: Double,
+    val mealDeltaSpan: Double,
+    val mealUncertainConfidence: Double,
+    val mealConfirmConfidence: Double,
+
+    // commit logic
+    val commitCooldownMinutes: Int,
     val minCommitDose: Double,
-    val commitIobPower: Double,
 
-    // ── NEW: micro-correction hold (wachten bij dalen/vlak) ──
-    val correctionHoldSlopeMax: Double,     // bv -0.20 mmol/L/h
-    val correctionHoldAccelMax: Double,     // bv +0.05 mmol/L/h²
-    val correctionHoldDeltaMax: Double,     // bv 1.5 mmol/L boven target
+    // micro-correction hold + anti-drip
+    val correctionHoldSlopeMax: Double,
+    val correctionHoldAccelMax: Double,
+    val correctionHoldDeltaMax: Double,
+    val smallCorrectionMaxU: Double,
+    val smallCorrectionCooldownMinutes: Int,
 
-    val smallCorrectionMaxU: Double,        // bv 0.15
-    val smallCorrectionCooldownMinutes: Int, // bv 20
-
-    // ── NEW: peak/absorption suppression ──
-    // Binnen deze window na een commit mag het algoritme "stilvallen" rond/na de piek.
+    // absorption / peak suppression
     val absorptionWindowMinutes: Int,
+    val peakSlopeThreshold: Double,
+    val peakAccelThreshold: Double,
+    val absorptionDoseFactor: Double,
 
-    // Als slope onder deze waarde komt, benaderen we piek/plateau
-    val peakSlopeThreshold: Double,       // mmol/L/h
-
-    // Als accel onder deze waarde komt, zit je in afremmen (pre-peak/peak)
-    val peakAccelThreshold: Double,       // mmol/L/h²
-
-    // Hoe hard onderdrukken we dosing in absorption (0.0 = volledig stop)
-    val absorptionDoseFactor: Double,     // 0..1
-
-    // ── NEW: pre-peak bundling control ──
-    val prePeakBundleFactor: Double,   // 0.0..1.0 (relatief tov maxSMB)
-
-    // ── NEW: re-entry ──
-    // Minimale tijd sinds laatste commit voordat we een nieuwe meal-commit toestaan
+    // re-entry
     val reentryMinMinutesSinceCommit: Int,
-
-    // Extra cooldown speciaal voor re-entry commits (los van commitCooldownMinutes)
     val reentryCooldownMinutes: Int,
+    val reentrySlopeMin: Double,
+    val reentryAccelMin: Double,
+    val reentryDeltaMin: Double,
 
-    // Re-entry vereist sterkere signalen (tweede gang / dessert)
-    val reentrySlopeMin: Double,          // mmol/L/h
-    val reentryAccelMin: Double,          // mmol/L/h²
-    val reentryDeltaMin: Double,           // mmol/L
+    // stagnation
+    val stagnationDeltaMin: Double,
+    val stagnationSlopeMaxNeg: Double,
+    val stagnationSlopeMaxPos: Double,
+    val stagnationAccelMaxAbs: Double,
+    val stagnationEnergyBoost: Double,
 
-    // ── NEW: stagnation / nasleep na maaltijd ──
-    val stagnationDeltaMin: Double,        // mmol/L boven target
-    val stagnationSlopeMaxNeg: Double,     // mmol/L/h (lichte daling toegestaan)
-    val stagnationSlopeMaxPos: Double,     // mmol/L/h (lichte stijging toegestaan)
-    val stagnationAccelMaxAbs: Double,   //
-    val stagnationEnergyBoost: Double, // energy per mmol boven target
+    // early-dose & fast-carb behavior (algorithmic tuning)
+    val earlyPeakEscalationBonus: Double,
+    val earlyStage1ThresholdMul: Double,
+    val enableFastCarbOverride: Boolean,
 
-    // ── Peak prediction ──
-    val peakPredictionThreshold: Double,    // mmol/L (bv 12.0)
-    val peakConfirmCycles: Int,             // aantal 5m-cycli
+    // peak prediction (updatePeakEstimate)
+    val peakPredictionThreshold: Double,
+    val peakConfirmCycles: Int,
     val peakMinConsistency: Double,
-    val peakMinSlope: Double,               // mmol/L/h
-    val peakMinAccel: Double,               // mmol/L/h²
-    val peakPredictionHorizonH: Double,      // uren
-    val peakExitSlope: Double,    // bv 0.45
-    val peakExitAccel: Double,    // bv -0.08
+    val peakMinSlope: Double,
+    val peakMinAccel: Double,
+    val peakPredictionHorizonH: Double,
+    val peakExitSlope: Double,
+    val peakExitAccel: Double,
 
-    val peakIobBoostWatching: Double,   // bv 1.15
-    val peakIobBoostConfirmed: Double,  // bv 1.40
+    val peakMomentumHalfLifeMin: Double,
+    val peakMinMomentum: Double,
+    val peakMomentumGain: Double,
+    val peakRiseGain: Double,
+    val peakUseMaxSlopeFrac: Double,
+    val peakUseMaxAccelFrac: Double,
+    val peakPredictionMaxMmol: Double,
 
-    val peakMomentumHalfLifeMin: Double,   // bv 25.0
-    val peakMinMomentum: Double,           // bv 0.35 (mmol)
-    val peakMomentumGain: Double,          // bv 2.8
-    val peakRiseGain: Double,              // bv 0.65
-    val peakUseMaxSlopeFrac: Double,       // bv 0.6
-    val peakUseMaxAccelFrac: Double,       // bv 0.5
-    val peakPredictionMaxMmol: Double,       // bv 25.0
-
+    // trend persistence
     val trendConfirmCycles: Int
 )
-
 
 fun loadFCLvNextConfig(
     prefs: Preferences,
     isNight: Boolean
 ): FCLvNextConfig {
 
-    val gain : Double
-    val maxSMB : Double
+    val profileName =  prefs.get(StringKey.fcl_vnext_profile)
+    val mealDetectSpeed =  prefs.get(StringKey.fcl_vnext_meal_detect_speed)
+    val correctionStyle =  prefs.get(StringKey.fcl_vnext_correction_style)
+    val doseDistributionStyle = prefs.get(StringKey.fcl_vnext_dose_distribution_style) // ✅ NEW
 
-    if (isNight) {
-        gain = prefs.get(DoubleKey.fcl_vnext_gain_night)
-        maxSMB = prefs.get(DoubleKey.max_bolus_night)
-    } else {
-        gain = prefs.get(DoubleKey.fcl_vnext_gain_day)
-        maxSMB = prefs.get(DoubleKey.max_bolus_day)
-    }
 
-    return FCLvNextConfig(
-        // dynamiek
-        kDelta = prefs.get(DoubleKey.fcl_vnext_k_delta),
-        kSlope = prefs.get(DoubleKey.fcl_vnext_k_slope),
-        kAccel = prefs.get(DoubleKey.fcl_vnext_k_accel),
+    val gain =
+        if (isNight) prefs.get(DoubleKey.fcl_vnext_gain_night)
+        else prefs.get(DoubleKey.fcl_vnext_gain_day)
 
-        // betrouwbaarheid
-        minConsistency = prefs.get(DoubleKey.fcl_vnext_min_consistency),
-        consistencyExp = prefs.get(DoubleKey.fcl_vnext_consistency_exp),
+    val maxSMB =
+        if (isNight) prefs.get(DoubleKey.max_bolus_night)
+        else prefs.get(DoubleKey.max_bolus_day)
 
-        // IOB veiligheid
-        iobStart = prefs.get(DoubleKey.fcl_vnext_iob_start),
-        iobMax = prefs.get(DoubleKey.fcl_vnext_iob_max),
-        iobMinFactor = prefs.get(DoubleKey.fcl_vnext_iob_min_factor),
 
-        // gain
+    // ─────────────────────────────────────────────
+   // Meal detect speed mapping (TIMING ONLY)
+   // ─────────────────────────────────────────────
+
+    val base = FCLvNextConfig(
+
+        // =================================================
+        // 🧭 UI PARAMETERS (ENKEL DEZE)
+        // =================================================
         gain = gain,
-
-        // execution
-        hybridPercentage = prefs.get(IntKey.hybrid_basal_perc),
-        deliveryCycleMinutes = 5,
-        maxTempBasalRate = 15.0,
-
         maxSMB = maxSMB,
+        hybridPercentage = 50,
 
-        // meal (jouw huidige defaults)
-        mealSlopeMin = 0.8,
-        mealSlopeSpan = 0.8,
+        profielNaam = profileName,
+        mealDetectSpeed = mealDetectSpeed,
+        correctionStyle = correctionStyle,
+        doseDistributionStyle = doseDistributionStyle,
 
-        mealAccelMin = 0.15,
-        mealAccelSpan = 0.6,
+        // =================================================
+        // 🧠 LEARNING BASE (startwaarden)
+        // =================================================
 
-        mealDeltaMin = 0.8,
-        mealDeltaSpan = 1.0,
+        // =================================================
+        // 📊 PROFILE — DOSE STRENGTH (default = BALANCED)
+        // =================================================
+        doseStrengthMul = 1.00,
+        maxCommitFractionMul = 1.00,
 
-        mealUncertainConfidence = 0.45,
-        mealConfirmConfidence = 0.7,
+        // ✅ Distribution base (BALANCED)
+        // (PULSED/SMOOTH schalen dit)
+        smallDoseThresholdU = 0.40,
+        microCapFracOfMaxSmb = 0.10,
+        smallCapFracOfMaxSmb = 0.30,
 
-        commitCooldownMinutes = 15,
+        kDelta = 1.00,
+        kSlope = 0.45,
+        kAccel = 0.55,
 
         uncertainMinFraction = 0.45,
         uncertainMaxFraction = 0.70,
         confirmMinFraction = 0.70,
         confirmMaxFraction = 1.00,
 
-        minCommitDose = 0.3,
-        commitIobPower = prefs.get(DoubleKey.fcl_vnext_commit_iob_power),
+        // =================================================
+        // 🛡️ CONSTANTEN / LOGICA
+        // =================================================
 
+        // smoothing
+        bgSmoothingAlpha = 0.40,
+
+        // betrouwbaarheid
+        minConsistency = 0.18,
+        consistencyExp = 1.00,
+
+        // IOB safety
+        iobStart = 0.40,
+        iobMax = 0.75,
+        iobMinFactor = 0.10,
+
+        // commit / execution
+        commitIobPower = 1.00,
+        minCommitDose = 0.30,
+        commitCooldownMinutes = 15,
+
+        deliveryCycleMinutes = 5,
+        maxTempBasalRate = 15.0,
+
+        // meal detect
+        mealSlopeMin = 0.60,
+        mealSlopeSpan = 0.8,
+        mealAccelMin = 0.15,
+        mealAccelSpan = 0.6,
+        mealDeltaMin = 0.80,
+        mealDeltaSpan = 1.0,
+        mealUncertainConfidence = 0.35,
+        mealConfirmConfidence = 0.70,
+
+        // micro-hold
         correctionHoldSlopeMax = -0.20,
         correctionHoldAccelMax = 0.05,
         correctionHoldDeltaMax = 1.5,
-
         smallCorrectionMaxU = 0.15,
         smallCorrectionCooldownMinutes = 15,
 
-        // ── NEW: absorption/peak suppression ──
-        absorptionWindowMinutes = 60,     // 60 min na commit: piek + begin afbouw
-        peakSlopeThreshold = 0.3,         // onder 0.3 mmol/L/h = plateau/piek regio
-        peakAccelThreshold = -0.05,       // accel < -0.05 = afremmen (pre-peak/peak)
-        absorptionDoseFactor = 0.0,       // 0 = stop (drastisch). Later kun je 0.1 doen.
+        // absorption / peak
+        absorptionWindowMinutes = 60,
+        absorptionDoseFactor = 0.15,
+        peakSlopeThreshold = 0.3,
+        peakAccelThreshold = -0.05,
 
-        prePeakBundleFactor = 0.55,    //  noch implementeren prefs.get(DoubleKey.fcl_vnext_prepeak_maxsmb_factor),
+        // re-entry
+        reentryMinMinutesSinceCommit = 25,
+        reentryCooldownMinutes = 20,
+        reentrySlopeMin = 1.0,
+        reentryAccelMin = 0.10,
+        reentryDeltaMin = 1.0,
 
-        // ── NEW: re-entry ──
-        reentryMinMinutesSinceCommit = 25,  // tweede gang vaak pas later
-        reentryCooldownMinutes = 20,        // niet stapelen met elke 5m
-        reentrySlopeMin = 1.0,              // moet echt weer stijgen
-        reentryAccelMin = 0.10,             // liefst weer versnellen
-        reentryDeltaMin = 1.0,    // boven target
+        // stagnation
+        stagnationDeltaMin = 0.80,
+        stagnationSlopeMaxNeg = -0.25,
+        stagnationSlopeMaxPos = 0.25,
+        stagnationAccelMaxAbs = 0.06,
+        stagnationEnergyBoost = 0.12,
 
-// ── NEW: stagnation / nasleep ──
-        stagnationDeltaMin = prefs.get(DoubleKey.fcl_vnext_stagnation_delta_min),
-        stagnationSlopeMaxNeg =  prefs.get(DoubleKey.fcl_vnext_stagnation_slope_max_neg),
-        stagnationSlopeMaxPos = prefs.get(DoubleKey.fcl_vnext_stagnation_slope_max_pos),
-        stagnationAccelMaxAbs = prefs.get(DoubleKey.fcl_vnext_stagnation_accel_max_abs),
-        stagnationEnergyBoost = prefs.get(DoubleKey.fcl_vnext_stagnation_energy_boost),
+        earlyPeakEscalationBonus = 0.10,
+        earlyStage1ThresholdMul = 1.00,
+        enableFastCarbOverride = true,
 
+        // peak prediction
         peakPredictionThreshold = 12.5,
         peakConfirmCycles = 2,
         peakMinConsistency = 0.55,
@@ -224,8 +277,6 @@ fun loadFCLvNextConfig(
         peakPredictionHorizonH = 1.2,
         peakExitSlope = 0.45,
         peakExitAccel = -0.08,
-        peakIobBoostWatching = 1.15,
-        peakIobBoostConfirmed =1.40,
 
         peakMomentumHalfLifeMin = 25.0,
         peakMinMomentum = 0.35,
@@ -235,7 +286,159 @@ fun loadFCLvNextConfig(
         peakUseMaxAccelFrac = 0.5,
         peakPredictionMaxMmol = 25.0,
 
-        trendConfirmCycles = 2   // start veilig: ~10 minuten
+        trendConfirmCycles = 2
     )
 
+    return base
+        .let { applyProfileDoseStrength(it) }
+        .let { applyMealDetectSpeed(it) }
+        .let { applyCorrectionStyle(it) }
+        .let { applyDoseDistributionStyle(it) }
 }
+
+private fun applyProfileDoseStrength(
+    cfg: FCLvNextConfig
+): FCLvNextConfig {
+
+    return when (cfg.profielNaam) {
+
+        "STRICT" -> cfg.copy(
+            doseStrengthMul = cfg.doseStrengthMul * 0.85,
+            maxCommitFractionMul = cfg.maxCommitFractionMul * 0.80
+        )
+
+        "AGGRESSIVE" -> cfg.copy(
+            doseStrengthMul = cfg.doseStrengthMul * 1.15,
+            maxCommitFractionMul = cfg.maxCommitFractionMul * 1.20
+        )
+
+        else -> cfg
+        // BALANCED = base
+    }
+}
+
+
+private fun applyMealDetectSpeed(
+    cfg: FCLvNextConfig
+): FCLvNextConfig {
+
+    return when (cfg.mealDetectSpeed) {
+
+        "SLOW" -> cfg.copy(
+            mealSlopeMin = cfg.mealSlopeMin + 0.15,
+            mealAccelMin = cfg.mealAccelMin + 0.03,
+            mealDeltaMin = cfg.mealDeltaMin + 0.20,
+
+            mealUncertainConfidence =
+                (cfg.mealUncertainConfidence + 0.10).coerceIn(0.0, 1.0),
+
+            mealConfirmConfidence =
+                (cfg.mealConfirmConfidence + 0.05).coerceIn(0.0, 1.0)
+        )
+
+        "FAST" -> cfg.copy(
+            mealSlopeMin = (cfg.mealSlopeMin - 0.15).coerceAtLeast(0.2),
+            mealAccelMin = (cfg.mealAccelMin - 0.05).coerceAtLeast(0.05),
+            mealDeltaMin = (cfg.mealDeltaMin - 0.20).coerceAtLeast(0.3),
+
+            mealUncertainConfidence =
+                (cfg.mealUncertainConfidence - 0.05).coerceIn(0.0, 1.0),
+
+            mealConfirmConfidence =
+                (cfg.mealConfirmConfidence - 0.10).coerceIn(0.0, 1.0)
+        )
+
+        else -> cfg
+        // MODERATE = base
+    }
+}
+
+private fun applyCorrectionStyle(
+    cfg: FCLvNextConfig
+): FCLvNextConfig {
+
+    fun scaleCooldown(x: Int, mul: Double): Int =
+        (x * mul).toInt().coerceAtLeast(1)
+
+    return when (cfg.correctionStyle) {
+
+        "CAUTIOUS" -> cfg.copy(
+            smallCorrectionMaxU = (cfg.smallCorrectionMaxU * 0.70).coerceAtLeast(0.05),
+            smallCorrectionCooldownMinutes = scaleCooldown(cfg.smallCorrectionCooldownMinutes, 1.7),
+
+            correctionHoldSlopeMax = cfg.correctionHoldSlopeMax + 0.10,
+            correctionHoldAccelMax = cfg.correctionHoldAccelMax + 0.03,
+            correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 0.70
+        )
+
+        "PERSISTENT" -> cfg.copy(
+            smallCorrectionMaxU = (cfg.smallCorrectionMaxU * 1.7).coerceAtMost(0.40),
+            smallCorrectionCooldownMinutes = scaleCooldown(cfg.smallCorrectionCooldownMinutes, 0.6),
+
+            correctionHoldSlopeMax = cfg.correctionHoldSlopeMax - 0.10,
+            correctionHoldAccelMax = cfg.correctionHoldAccelMax - 0.03,
+            correctionHoldDeltaMax = cfg.correctionHoldDeltaMax * 1.30
+        )
+
+        else -> cfg
+        // NORMAL = base
+    }
+}
+// ─────────────────────────────────────────────
+// 4) ✅ Dose distribution style (SMOOTH / BALANCED / PULSED)
+// Doel: vorm van delivery merkbaar maken zonder timing/correction te vermengen.
+// ─────────────────────────────────────────────
+private fun applyDoseDistributionStyle(cfg: FCLvNextConfig): FCLvNextConfig {
+
+    return when (cfg.doseDistributionStyle) {
+
+        "SMOOTH" -> cfg.copy(
+            // meer basaal, minder SMB
+            hybridPercentage = 75,
+
+            // vaker "basal-only" gedrag bij kleine doses
+            smallDoseThresholdU = (cfg.smallDoseThresholdU * 1.35).coerceIn(0.30, 0.70),
+
+            // kleinere micro/small caps -> minder tikjes
+            microCapFracOfMaxSmb = (cfg.microCapFracOfMaxSmb * 0.85).coerceIn(0.05, 0.20),
+            smallCapFracOfMaxSmb = (cfg.smallCapFracOfMaxSmb * 0.85).coerceIn(0.15, 0.50),
+
+            // kortere tail dosing rond absorptie/peak
+            absorptionDoseFactor = (cfg.absorptionDoseFactor * 0.85).coerceIn(0.08, 0.25)
+        )
+
+        "PULSED" -> cfg.copy(
+            // meer SMB, minder basaal
+            hybridPercentage = 25,
+
+            // sneller SMB-gedrag (minder vaak basal-only)
+            smallDoseThresholdU = (cfg.smallDoseThresholdU * 0.75).coerceIn(0.20, 0.60),
+
+            // grotere micro/small caps -> duidelijkere pulsen
+            microCapFracOfMaxSmb = (cfg.microCapFracOfMaxSmb * 1.25).coerceIn(0.05, 0.25),
+            smallCapFracOfMaxSmb = (cfg.smallCapFracOfMaxSmb * 1.20).coerceIn(0.15, 0.70),
+
+            // iets langere tail dosing
+            absorptionDoseFactor = (cfg.absorptionDoseFactor * 1.25).coerceIn(0.10, 0.35)
+        )
+
+        else -> cfg
+        // BALANCED = base: hybrid=50, threshold=0.40, caps=0.10/0.30, absorptionDoseFactor=0.15
+    }
+}
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

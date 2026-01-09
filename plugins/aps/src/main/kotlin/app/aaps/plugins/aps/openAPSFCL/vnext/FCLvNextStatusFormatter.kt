@@ -1,8 +1,11 @@
 package app.aaps.plugins.aps.openAPSFCL.vnext
 
 import org.joda.time.DateTime
+import app.aaps.core.keys.Preferences
+import app.aaps.core.keys.StringKey
 
-class FCLvNextStatusFormatter {
+class FCLvNextStatusFormatter(private val prefs: Preferences) {
+
 
     private fun formatDeliveryHistory(
         history: List<Pair<DateTime, Double>>?
@@ -14,22 +17,6 @@ class FCLvNextStatusFormatter {
         }
     }
 
-    /**
-     * Haal "PROFILE=..." uit statusText (zoals FCLvNext die toevoegt).
-     * We vermijden startsWith/removePrefix expres (jij kreeg unresolved references).
-     */
-    private fun extractProfileLine(statusText: String?): String? {
-        if (statusText.isNullOrBlank()) return null
-        val lines = statusText.split("\n")
-        for (line in lines) {
-            val t = line.trim()
-            // match exact "PROFILE="
-            if (t.length >= 8 && t.substring(0, 8) == "PROFILE=") {
-                return t // bv "PROFILE=BALANCED"
-            }
-        }
-        return null
-    }
 
     /**
      * Haal de blokregels onder "LEARNING ADVICE:" eruit.
@@ -117,7 +104,6 @@ class FCLvNextStatusFormatter {
         if (advice == null) return "Geen FCL advies"
 
         val statusText = advice.statusText ?: ""
-        val profileLine = extractProfileLine(statusText)
         val profileAdviceLine = extractProfileAdviceLine(statusText)
         val profileReasonLine = extractProfileReasonLine(statusText)
         val learningLines = extractLearningAdviceLines(statusText)
@@ -129,11 +115,6 @@ class FCLvNextStatusFormatter {
         sb.append("🧠 FCL vNext\n")
         sb.append("─────────────────────\n")
 
-        if (profileLine != null) {
-            sb.append("• ").append(profileLine).append("\n")
-        } else {
-            sb.append("• PROFILE=onbekend (niet gevonden in statusText)\n")
-        }
 
         if (profileAdviceLine != null) {
             sb.append("• ").append(profileAdviceLine).append("\n")
@@ -261,7 +242,7 @@ ${activityLog ?: "Geen activiteitdata"}
 """.trimIndent()
 
         val resistanceStatus = """
-🧬 INSULINERESISTENTIE
+🧬 AUTO-SENS
 ─────────────────────
 ${resistanceLog ?: "Geen resistentie-log"}
 """.trimIndent()
@@ -274,8 +255,13 @@ ${metricsText ?: "Nog geen data"}
 
         return """
 ════════════════════════
- 🧠 FCL vNext v19.2.1
+ 🧠 FCL vNext v21.7.0 
 ════════════════════════
+• Profiel              : ${prefs.get(StringKey.fcl_vnext_profile)}
+• Meal Detect Speed  : ${prefs.get(StringKey.fcl_vnext_meal_detect_speed)}
+• Correction style   : ${prefs.get(StringKey.fcl_vnext_correction_style)}
+• Insulin distribution : ${prefs.get(StringKey.fcl_vnext_dose_distribution_style)}
+
 
 $coreStatus
 

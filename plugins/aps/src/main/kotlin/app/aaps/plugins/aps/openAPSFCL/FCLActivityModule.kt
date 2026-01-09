@@ -6,6 +6,7 @@ import app.aaps.core.interfaces.db.PersistenceLayer
 import app.aaps.core.keys.BooleanKey
 import app.aaps.core.keys.DoubleKey
 import app.aaps.core.keys.IntKey
+import app.aaps.core.keys.StringKey
 import app.aaps.core.keys.Preferences
 import org.joda.time.DateTime
 
@@ -36,6 +37,23 @@ class FCLActivityModule(
         val log: String
     )
 
+    private data class ActivityPreset(
+        val maxRetention: Int,
+        val insulinPercent: Double,
+        val targetAdjust: Double
+    )
+
+    private fun resolveActivityPreset(): ActivityPreset {
+        return when (preferences.get(StringKey.fcl_vnext_activity_behavior)) {
+            "OFF" -> ActivityPreset(0, 100.0, 0.0)
+            "LIGHT" -> ActivityPreset(3, 70.0, 1.5)
+            "NORMAL" -> ActivityPreset(5, 60.0, 2.0)
+            "STRONG" -> ActivityPreset(7, 50.0, 2.5)
+            else -> ActivityPreset(5, 60.0, 2.0)
+        }
+    }
+
+
     // ─────────────────────────────────────────
     // STATE
     // ─────────────────────────────────────────
@@ -54,7 +72,7 @@ class FCLActivityModule(
 
     fun evaluate(): ActivityResult {
 
-        if (!preferences.get(BooleanKey.stappenAanUit)) {
+        if (preferences.get(StringKey.fcl_vnext_activity_behavior) == "OFF") {
             reset()
             return ActivityResult(
                 insulinPercentage = 100.0,
@@ -94,12 +112,12 @@ class FCLActivityModule(
         steps5min: Int,
         lastUpdateTime: Long
     ): ActivityResult {
-
+        val preset = resolveActivityPreset()
         val log = StringBuilder()
         var retention = loadRetention()
 
-        val threshold5 = preferences.get(IntKey.stap_5minuten)
-        val maxRetention = preferences.get(IntKey.stap_retentie)
+        val threshold5 = 125
+        val maxRetention = preset.maxRetention
 
         val minutesOld =
             (DateTime.now().millis - lastUpdateTime) / (1000 * 60)
@@ -137,12 +155,10 @@ class FCLActivityModule(
         val isActive = retention > 0
 
         val insulinPerc =
-            if (isActive) preferences.get(IntKey.stap_activiteteitPerc).toDouble()
-            else 100.0
+            if (isActive) preset.insulinPercent else 100.0
 
         val targetAdj =
-            if (isActive) preferences.get(DoubleKey.stap_TT)
-            else 0.0
+            if (isActive) preset.targetAdjust else 0.0
 
         log.append(
             if (isActive)
@@ -173,11 +189,12 @@ class FCLActivityModule(
 
     private fun fallbackFromRetention(retention: Int, prefix: String): ActivityResult {
         val active = retention > 0
+        val preset = resolveActivityPreset()
         return ActivityResult(
             insulinPercentage =
-                if (active) preferences.get(IntKey.stap_activiteteitPerc).toDouble() else 100.0,
+                if (active) preset.insulinPercent else 100.0,
             targetAdjust =
-                if (active) preferences.get(DoubleKey.stap_TT) else 0.0,
+                if (active) preset.targetAdjust else 0.0,
             isActive = active,
             log = prefix
         )

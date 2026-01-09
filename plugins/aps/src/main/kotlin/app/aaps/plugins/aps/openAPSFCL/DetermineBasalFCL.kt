@@ -1,6 +1,6 @@
 package app.aaps.plugins.aps.openAPSFCL
 
-//  import android.R
+
 import android.os.Environment
 import app.aaps.core.data.time.T
 import app.aaps.core.interfaces.aps.APSResult
@@ -389,7 +389,7 @@ class DetermineBasalFCL @Inject constructor(
             // target correctie (mmol → mg/dL)
             targetMgdl += activity.targetAdjust * 18.0
 
-
+            target_bg = targetMgdl
             // ─────────────────────────────────────────────
             // 2️⃣ DAG / NACHT + RESISTENTIE
             // ─────────────────────────────────────────────
@@ -397,6 +397,7 @@ class DetermineBasalFCL @Inject constructor(
             val dayNightHelper = FCLvNextDayNightHelper(preferences)
             val isNight: Boolean = dayNightHelper.isNightNow()
 
+            fclResistance.updateTargetMmol(target_bg/18.0)
             fclResistance.updateResistentieIndienNodig(isNight)
 
             val resistanceFactor: Double =
@@ -472,10 +473,16 @@ class DetermineBasalFCL @Inject constructor(
         //    advice.statusText.split("\n").forEach { consoleError.add(it) }
         //    consoleError.add("\n")
 
+            val snapshot = fclMetrics.buildLearningSnapshot(isNight)
+            if (snapshot != null) {
+                fclvNext.pushLearningMetrics(snapshot)
+            }
+
             val learningStatus =
                 fclvNext.getLearningStatus(isNight)
 
-            val statusFormatter = FCLvNextStatusFormatter()
+
+            val statusFormatter = FCLvNextStatusFormatter(preferences)
 
             val uiText = statusFormatter.buildStatus(
                 isNight = isNight,
@@ -496,8 +503,6 @@ class DetermineBasalFCL @Inject constructor(
         } else {
             consoleError.add("FCLvNext skipped: Need more BG data ${bgHistoryPoints.size}/10")
         }
-
-
 
 
         var sens = sensMgdl
@@ -881,7 +886,7 @@ class DetermineBasalFCL @Inject constructor(
 
             if (basalRate > 0) {
                 // HYBRIDE MODE: Temp basaal + gereduceerde bolus
-                rT.reason.append("=> Hybrid: ${preferences.get(IntKey.hybrid_basal_perc)}% basaal | ")
+
                 rT.reason.append("SMB: ${round(bolusAmount, 2)}U | ")
                 rT.reason.append("Temp: ${round(basalRate, 2)}U/h ")
 
